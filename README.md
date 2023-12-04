@@ -108,6 +108,14 @@ Do all the above steps in one command:
 $ autoPDFtagger pdf_archive -tic -e new_archive
 ```
 
+## Random Technical Aspects / Dive Deeper If You Want
+
+- In addition to the terminal program, a Python module autoPDFtagger is available for integration with other software. Check the code for the interface details.
+- The analysis of files includes not just the filename but also the local file path relative to a base directory (Base-Directory). By default, when folders are specified, the respective folder is set as the base directory for all files down to the subfolders. In some cases, it may be sensible to manually set a different base directory.
+- Metadata management uses a "confidence logic". This means data is only updated if the (estimated) certainty/confidence is higher than the existing data. This aims for incremental improvement of information but can sometimes lead to inconsistent results.
+- To reduce costs, a fallback to the GPT-3.5 Turbo model is possible. However, this significantly reduces the quality of analyses. Optimizing the prompts would certainly be beneficial
+
+
 ## Code Structure
 
 - `main.py`: The terminal interface for the application.
@@ -119,8 +127,11 @@ $ autoPDFtagger pdf_archive -tic -e new_archive
 - `config.py`: Manages configuration files.
 - `autoPDFtagger_example_config.conf`: An example configuration file outlining API key setup and other settings.
 
+
+
 ## Future Development
 
+- **Implementing an AI-API-Cache to save cost for testing**
 - **Graphical User Interface**: Developing a more user-friendly interface.
 - **HTML Viewer App**: A proposed app to visualize the JSON database and integrate it with the file archive.
 - **Cost Control**: Implementing features for monitoring and managing API usage costs.
