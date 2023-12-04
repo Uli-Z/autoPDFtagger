@@ -3,3 +3,7 @@ __pycache__/aiwrapper.cpython-311.pyc
 *.pyc
 *.ipynb
 *.pyc
+dist/
+build/
+*.egg-info/
+*.egg

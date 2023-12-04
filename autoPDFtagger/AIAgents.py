@@ -1,11 +1,10 @@
 import logging
 import re
-import openai
 from openai import OpenAI
 import pprint
 import tenacity
 import tiktoken
-from config import config
+from autoPDFtagger.config import config
 api_key = config['OPENAI-API']['API-Key']
 LANGUAGE = config['DEFAULT']['language']
 

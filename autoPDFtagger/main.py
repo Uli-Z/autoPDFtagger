@@ -3,7 +3,7 @@ import logging
 from textwrap import indent
 import os
 
-from config import config
+from autoPDFtagger.config import config
 
 def main():
      # ArgumentParser-Setup für CLI-Optionen
@@ -34,7 +34,7 @@ def main():
         raise e
 
     # After loading configuration:
-    from autoPDFtagger import autoPDFtagger
+    from autoPDFtagger.autoPDFtagger import autoPDFtagger
 
     # Konfigurieren Sie das Logging basierend auf dem Debug-Parameter
     logging.basicConfig(level=debug_levels[args.debug], format='%(asctime)s - %(levelname)s ::: %(message)s',
@@ -59,7 +59,6 @@ def main():
         logging.info("Doing AI-text-analysis")
         archive.ai_text_analysis(args.ai_text_analysis)
 
-    print(output_json)
 
     if args.ai_image_analysis:
         archive.ai_image_analysis()

@@ -1,11 +1,11 @@
-from AIAgents import AIAgent_OpenAI
-from AIAgents import OpenAI_model_pricelist
+from autoPDFtagger.AIAgents import AIAgent_OpenAI
+from autoPDFtagger.AIAgents import OpenAI_model_pricelist
 import logging
-from config import config
+from autoPDFtagger.config import config
 api_key = config['OPENAI-API']['API-Key']
 LANGUAGE = config['DEFAULT']['language']
 
-from PDFDocument import PDFDocument
+from autoPDFtagger.PDFDocument import PDFDocument
 import json
 import pprint
 import re

@@ -2,7 +2,7 @@ import argparse
 import logging
 from textwrap import indent
 import os
-
+import PDFList
 from config import config
 
 def main():

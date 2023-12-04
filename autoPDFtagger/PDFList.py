@@ -1,14 +1,12 @@
 import os
 import json
-import fitz  # PyMuPDF für die Thumbnail-Erstellung
 import logging
 import re
 from datetime import datetime
-import base64
 import pprint
 import traceback
 
-from PDFDocument import PDFDocument
+from autoPDFtagger.PDFDocument import PDFDocument
 
 class PDFList:
     def __init__(self, folder=""):

@@ -23,7 +23,6 @@ from datetime import datetime
 import pytz
 import traceback
 
-import typing
 
 date_formats = {
     r'\d{4}-\d{2}-\d{2}': "%Y-%m-%d",  # YYYY-MM-DD

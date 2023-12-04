@@ -1,12 +1,12 @@
 
 
-from PDFList import PDFList
+from autoPDFtagger.PDFList import PDFList
 
 import os
 import logging
-from config import config
+from autoPDFtagger.config import config
 
-import AIAgents_OpenAI_pdf
+from autoPDFtagger import AIAgents_OpenAI_pdf
 
 class autoPDFtagger:
     def __init__(self):
