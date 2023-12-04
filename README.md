@@ -29,16 +29,9 @@ In the advancing digital age, many documents are now delivered digitally, yet si
 - **Accuracy and Reliability**: This initial version is a proof-of-concept and may have limitations. It's designed to create copies rather than alter original files.
 - **Metadata Editing**: Altering metadata could potentially invalidate certain documents.
 
-## Getting Started
-
-1. **Download and Installation**:
-   - Download the software.
-   - Install using PIP.
-   - Configure using the example configuration file.
-
 ## Installation
  ```shell
-pip install git+https://github.com/Uli-Z/autoPDFtagger
+$ pip install git+https://github.com/Uli-Z/autoPDFtagger
 ```
 
 Create configuration file and save it to *~/.autoPDFtagger.conf*: 
@@ -53,7 +46,7 @@ API-Key = {INSERT YOUR API-KEY}
 ```
 ## Usage
  ```shell
-autoPDFtagger --help
+$ autoPDFtagger --help
 usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j JSON] [-d {0,1,2}] [-t] [-i] [-c] [-e EXPORT [EXPORT ...]] [-l] [-x] input_items [input_items ...]
 
 Smart PDF-analyzing Tool
@@ -82,6 +75,32 @@ options:
                         List incomplete documents
   -x, --filter-incomplete
                         Only apply action to incomplete documents
+```
+
+## Examples
+Read all pdf files from a folder *pdf_archive* and store information in a JSON-database *files.json*:
+```shell
+$ autoPDFtagger pdf_archive -j files.json
+```
+
+Read a previous created JSON-database an do an AI-text-analysis, storing the results in a new JSON-file
+```shell
+$ autoPDFtagger files.json -t -j files2.json
+```
+
+Do an AI-image-analysis and tag-analyis on these files
+```shell
+$ autoPDFtagger files2.json -i -c files3.json
+```
+
+Copy the file to a new folder *new_archive* setting new metadata and assigning new filenames. The original folder structure remains unchanged.
+```shell
+$ autoPDFtagger files3.json -e new_archive
+```
+
+Do all the above steps in one command: 
+```shell
+$ autoPDFtagger pdf_archive -tic -e new_archive
 ```
 
 ## Code Structure
