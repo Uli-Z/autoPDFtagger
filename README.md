@@ -95,7 +95,7 @@ $ autoPDFtagger files.json -t -j files2.json
 
 Do an AI-image-analysis and tag-analyis on these files
 ```shell
-$ autoPDFtagger files2.json -i -c files3.json
+$ autoPDFtagger files2.json -i -c -j files3.json
 ```
 
 Copy the file to a new folder *new_archive* setting new metadata and assigning new filenames. The original folder structure remains unchanged.
