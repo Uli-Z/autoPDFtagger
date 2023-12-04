@@ -22,12 +22,17 @@ autoPDFtagger is a Python tool designed for efficient home-office organization, 
 
 In the advancing digital age, many documents are now delivered digitally, yet significant documents often still arrive in paper form. Looking towards a digital future, the consolidation of these documents into a unified digital archive becomes increasingly valuable. Simple scanning using smartphone cameras has made this practical. However, the reliability of existing OCR technologies and their limited ability to effectively index non-textual content like drawings or photos hampers the searchability of these documents. autoPDFtagger aims to bridge this gap by offering AI-assisted analysis and organization of PDF files, enhancing their searchability and organization with a level of precision comparable to human effort.
 
-## Caution and Considerations
+## Caution and Considerations / Disclaimer
 
 - **Data Privacy**: PDF content is transmitted to OpenAI servers for analysis. While OpenAI claims non-use of API inputs for training, sensitivity in handling private documents is advised.
 - **Cost Control**: Be aware of the costs associated with OpenAI API usage, which is based on request volume.
 - **Accuracy and Reliability**: This initial version is a proof-of-concept and may have limitations. It's designed to create copies rather than alter original files.
 - **Metadata Editing**: Altering metadata could potentially invalidate certain documents.
+
+## What you need to run this program
+- Python
+- An OpenAI-API-Key
+- Calculate Costs about 0.01 $ per processed PDF-Page
 
 ## Installation
  ```shell
