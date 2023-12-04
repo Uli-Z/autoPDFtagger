@@ -22,15 +22,6 @@ autoPDFtagger is a Python tool designed for efficient home-office organization, 
 
 In the advancing digital age, many documents are now delivered digitally, yet significant documents often still arrive in paper form. Looking towards a digital future, the consolidation of these documents into a unified digital archive becomes increasingly valuable. Simple scanning using smartphone cameras has made this practical. However, the reliability of existing OCR technologies and their limited ability to effectively index non-textual content like drawings or photos hampers the searchability of these documents. autoPDFtagger aims to bridge this gap by offering AI-assisted analysis and organization of PDF files, enhancing their searchability and organization with a level of precision comparable to human effort.
 
-## Future Development
-
-- **Graphical User Interface**: Developing a more user-friendly interface.
-- **HTML Viewer App**: A proposed app to visualize the JSON database and integrate it with the file archive.
-- **Cost Control**: Implementing features for monitoring and managing API usage costs.
-- **Integration and Compatibility**:
-  - Expanding to other AI APIs and exploring local AI model integration.
-  - Ensuring compatibility with applications like paperless-ngx.
-
 ## Caution and Considerations
 
 - **Data Privacy**: PDF content is transmitted to OpenAI servers for analysis. While OpenAI claims non-use of API inputs for training, sensitivity in handling private documents is advised.
@@ -71,6 +62,15 @@ API-Key = {INSERT YOUR API-KEY}
 - `PDFList.py`: Oversees a database of PDF documents, their metadata, and provides export functions.
 - `config.py`: Manages configuration files.
 - `autoPDFtagger_example_config.conf`: An example configuration file outlining API key setup and other settings.
+
+## Future Development
+
+- **Graphical User Interface**: Developing a more user-friendly interface.
+- **HTML Viewer App**: A proposed app to visualize the JSON database and integrate it with the file archive.
+- **Cost Control**: Implementing features for monitoring and managing API usage costs.
+- **Integration and Compatibility**:
+  - Expanding to other AI APIs and exploring local AI model integration.
+  - Ensuring compatibility with applications like paperless-ngx.
 
 ## License
 
