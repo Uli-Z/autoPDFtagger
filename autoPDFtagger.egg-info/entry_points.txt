@@ -1,2 +1,0 @@
-[console_scripts]
-autoPDFtagger = autoPDFtagger.main:main
