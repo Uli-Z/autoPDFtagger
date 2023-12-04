@@ -37,7 +37,7 @@ In the advancing digital age, many documents are now delivered digitally, yet si
    - Configure using the example configuration file.
 
 ## Installation
- ```js
+ ```shell
 pip install git+https://github.com/Uli-Z/autoPDFtagger
 ```
 
@@ -50,6 +50,38 @@ language = {YOUR LANGUAGE}
 
 [OPENAI-API]
 API-Key = {INSERT YOUR API-KEY}
+```
+## Usage
+ ```shell
+autoPDFtagger --help
+usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j JSON] [-d {0,1,2}] [-t] [-i] [-c] [-e EXPORT [EXPORT ...]] [-l] [-x] input_items [input_items ...]
+
+Smart PDF-analyzing Tool
+
+positional arguments:
+  input_items           List of input PDFs and folders, alternativly you can use a JSON-file
+
+options:
+  -h, --help            show this help message and exit
+  --config-file CONFIG_FILE
+                        Specify path to configuration file. Defaults to ~/.autoPDFtagger.conf
+  -b [BASE_DIRECTORY], --base-directory [BASE_DIRECTORY]
+                        Set base directory
+  -j JSON, --json JSON  Path to output JSON file
+  -d {0,1,2}, --debug {0,1,2}
+                        Debug level (0: no debug, 1: basic debug, 2: detailed debug)
+  -t, --ai-text-analysis
+                        Do an AI text analysis
+  -i, --ai-image-analysis
+                        Do an AI image analysis
+  -c, --ai-tag-analysis
+                        Do an AI tag analysis
+  -e EXPORT, --export EXPORT
+                        Copy Documents to a target folder
+  -l, --list-incomplete
+                        List incomplete documents
+  -x, --filter-incomplete
+                        Only apply action to incomplete documents
 ```
 
 ## Code Structure
