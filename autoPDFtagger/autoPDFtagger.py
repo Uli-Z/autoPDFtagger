@@ -33,31 +33,36 @@ class autoPDFtagger:
         # Read folder oder PDF-file
         self.file_list.add_pdf_documents_from_folder(path, base_dir)
 
-    def ai_text_analysis(self, arguments):
+    def ai_text_analysis(self):
         logging.info("Asking AI to analyze PDF-Text")
-
-        ai = AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_text_analysis()
+        cost = 0
 
         for document in self.file_list.pdf_documents.values():
+            
+            ai = AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_text_analysis()
+
             logging.info("... " + document.file_name) 
             try:
                 response = ai.analyze_text(document)
                 document.set_from_json(response)
+                cost += ai.cost
             except Exception as e: 
                 logging.error(document.file_name)
                 logging.error(f"Text analysis failed. Error message: {e}")
+        logging.info(f"Spent {cost:.4f} $ for text analysis")
 
 
     def ai_image_analysis(self, minimum_image_size=300*300, confidence_treshold=7):
         logging.info("Asking AI to analyze Images")
         
-        ai = AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_image_analysis()
-        
+        costs = 0
         for document in self.file_list.pdf_documents.values(): 
+            ai = AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_image_analysis()
             logging.info("... " + document.file_name)
             response = ai.analyze_images(document)
             document.set_from_json(response)
-    
+            costs += ai.cost
+        logging.info("Spent " + str(costs) + " $ for image analysis")
 
     def ai_tag_analysis(self):
         logging.info("Asking AI to optimize tags")
@@ -72,6 +77,7 @@ class autoPDFtagger:
         self.file_list.apply_tag_replacements_to_all(replacements)
         unique_tags = self.file_list.get_unique_tags()
         logging.info("New list of tags: " + str(unique_tags))
+        logging.info("Spent " + str(ai.cost) + " $ for tag analysis")
        
 
     def filter_incomplete_documents(self):

@@ -58,9 +58,9 @@ class AIAgent_OpenAI(AIAgent):
         self.add_message(system_message, role="system")
 
         # Cost-Control
-        self.token_usage_input = 0
-        self.token_usage_output = 0
         self.max_tokens=4096
+        self.cost = 0
+        self.log_file = "api_OPENAI.log"
 
 
     def add_message(self, content, role="user"):
@@ -105,8 +105,7 @@ class AIAgent_OpenAI(AIAgent):
                 + "\n\nAPI-ANSWER:\n" 
                 + pprint.pformat(response))
 
-            self.token_usage_input += response.usage.prompt_tokens
-            self.token_usage_output += response.usage.completion_tokens
+            self.cost += self.get_costs(response.usage.prompt_tokens, response.usage.completion_tokens)
 
             
             logging.getLogger().setLevel(original_level)
@@ -119,12 +118,12 @@ class AIAgent_OpenAI(AIAgent):
             logging.getLogger().setLevel(original_level)
             raise e
 
-    def get_costs(self):
+    def get_costs(self, token_input, token_output):
         if self.model in OpenAI_model_pricelist:
-            cost_per_token_input, cost_per_token_output = OpenAI_model_pricelist[self.model]
-            total_cost_input = self.token_usage_input * cost_per_token_input / 1000
-            total_cost_output = self.token_usage_output * cost_per_token_output / 1000
-            return total_cost_input, total_cost_output
+            cost_per_token_input, cost_per_token_output, limit = OpenAI_model_pricelist[self.model]
+            total_cost_input = token_input * cost_per_token_input / 1000
+            total_cost_output = token_output * cost_per_token_output / 1000
+            return total_cost_input + total_cost_output
         else:
             raise ValueError("Model '" + self.model + "' not found in the price list.")
 

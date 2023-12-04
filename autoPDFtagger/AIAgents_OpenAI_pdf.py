@@ -66,7 +66,6 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
 
         try:
             response = super().send_request(temperature=0.2, response_format = None, )
-            logging.debug(response)
             return response
         except Exception as e:
             logging.error("API-Call failed")
@@ -197,8 +196,7 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
             "few hints about the content of the whole document) to 10 (very sure). "
             "You always answer in {LANGUAGE} language. For gathering information, "
             "you use the given filename, pathname and OCR-analyzed text. "
-            "Adjust the confidence ratings accordingly to reflect the "
-            "certainty that the provided information represents the entire document. "
+            "If you are seeing a blank document, your title-confidence is alway 0."
             "You always answer in a specified JSON-Format like in this example:\n"
             "{\n"
             "    'description': '[description]',\n"
