@@ -25,14 +25,14 @@ In the advancing digital age, many documents are now delivered digitally, yet si
 ## Caution and Considerations / Disclaimer
 
 - **Data Privacy**: PDF content is transmitted to OpenAI servers for analysis. While OpenAI claims non-use of API inputs for training, sensitivity in handling private documents is advised.
-- **Cost Control**: Be aware of the costs associated with OpenAI API usage, which is based on request volume.
+- **Cost Control**: Be aware of the costs associated with OpenAI API usage, which is based on request volume. Analysis of a single page costs around 0.05 $.
 - **Accuracy and Reliability**: This initial version is a proof-of-concept and may have limitations. It's designed to create copies rather than alter original files.
 - **Metadata Editing**: Altering metadata could potentially invalidate certain documents.
 
 ## What you need to run this program
 - Python
 - An OpenAI-API-Key
-- Calculate Costs about 0.01 $ per processed PDF-Page
+- Calculate Costs about 0.05 $ per processed PDF-Page
 
 ## Installation
  ```shell
