@@ -45,11 +45,21 @@ In the advancing digital age, many documents are now delivered digitally, yet si
    - Install using PIP.
    - Configure using the example configuration file.
 
-## Installation Guide
+## Installation
+ ```js
+pip install git+https://github.com/Uli-Z/autoPDFtagger
+```
 
-- Download the software package.
-- Install via PIP.
-- Set up the software using the provided `autoPDFtagger_example_config.conf` file.
+Create configuration file and save it to *~/.autoPDFtagger.conf*: 
+```ini
+; Configuration for autoPDFtagger
+
+[DEFAULT]
+language = {YOUR LANGUAGE}
+
+[OPENAI-API]
+API-Key = {INSERT YOUR API-KEY}
+```
 
 ## Code Structure
 
