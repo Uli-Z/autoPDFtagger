@@ -1,0 +1,8 @@
+
+config.py
+test.py
+__pycache__/aiwrapper.cpython-311.pyc
+*.pyc
+*.pyc
+*.ipynb
+*.pyc
