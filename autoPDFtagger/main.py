@@ -22,7 +22,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Map Debug-Level zu Logging-Leveln
+    # Map debug-Level to logging-level
     debug_levels = {0: logging.CRITICAL, 1: logging.INFO, 2: logging.DEBUG}
 
     try:
@@ -36,18 +36,14 @@ def main():
     # After loading configuration:
     from autoPDFtagger.autoPDFtagger import autoPDFtagger
 
-    # Konfigurieren Sie das Logging basierend auf dem Debug-Parameter
     logging.basicConfig(level=debug_levels[args.debug], format='%(asctime)s - %(levelname)s ::: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S')
-    #logging.basicConfig(level=debug_levels[args.debug], stream=sys.stdout)
-
-    logging.info("Programm gestartet")
 
     archive = autoPDFtagger()
 
-    # Iteriere über die input_items und füge diese zum Archiv hinzu
+    # Iterate over input items (PDFs and JSON-files)
     for input_item in args.input_items:
-        archive.add_file(input_item, args.base_directory)
+        archive.add_file(input_item, args.base_directory) # includes JSON-files!
 
     logging.debug("Following files were added: " + str(archive.file_list.get_sorted_pdf_filenames()))
 
@@ -62,7 +58,6 @@ def main():
     if args.ai_text_analysis:
         logging.info("Doing AI-text-analysis")
         archive.ai_text_analysis()
-
 
     if args.ai_image_analysis:
         archive.ai_image_analysis()
@@ -79,16 +74,13 @@ def main():
         logging.info("Listing incomplete documents")
         archive.show_incomplete_documents()
 
-    # Speichern der Ergebnisse in einer Output-JSON-Datei, falls angegeben
+    # Save results to JSON-file if set
     if args.json:
         output_json = archive.file_list.export_to_json_complete(args.json)
         logging.info(f"Database saved to {args.json}")
     else: # print to terminal
         output_json = archive.file_list.export_to_json_without_ocr()
         print(output_json)
-
-    #if args.output:
-    #    generate_viewer_application(args.output, output_json)
 
 
 if __name__ == "__main__":
