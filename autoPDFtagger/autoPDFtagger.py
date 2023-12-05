@@ -1,22 +1,13 @@
-
-
-from autoPDFtagger.PDFList import PDFList
-
 import os
 import logging
 from autoPDFtagger.config import config
-
+from autoPDFtagger.PDFList import PDFList
 from autoPDFtagger import AIAgents_OpenAI_pdf
 
 class autoPDFtagger:
     def __init__(self):
         self.ai = None
-        self.debug_level = 1
-        self.override = "confidence"
         self.file_list = PDFList()
-
-    def inport_database(self, json_file):
-        self.file_list.update_from_json(json_file)
 
     # Add file to database
     def add_file(self, path: str, base_dir = None):
@@ -35,7 +26,7 @@ class autoPDFtagger:
 
     def ai_text_analysis(self):
         logging.info("Asking AI to analyze PDF-Text")
-        cost = 0
+        cost = 0 # for monitoring
 
         for document in self.file_list.pdf_documents.values():
             
@@ -52,7 +43,7 @@ class autoPDFtagger:
         logging.info(f"Spent {cost:.4f} $ for text analysis")
 
 
-    def ai_image_analysis(self, minimum_image_size=300*300, confidence_treshold=7):
+    def ai_image_analysis(self):
         logging.info("Asking AI to analyze Images")
         
         costs = 0
@@ -64,6 +55,7 @@ class autoPDFtagger:
             costs += ai.cost
         logging.info("Spent " + str(costs) + " $ for image analysis")
 
+    # Simplify and unify tags over all documents in the database
     def ai_tag_analysis(self):
         logging.info("Asking AI to optimize tags")
         unique_tags = self.file_list.get_unique_tags()
@@ -73,13 +65,13 @@ class autoPDFtagger:
         replacements = ai.send_request(unique_tags)
 
         logging.info("Applying replacements")
-        # Ersetzungen und Spezifitätsinformationen anwenden
         self.file_list.apply_tag_replacements_to_all(replacements)
         unique_tags = self.file_list.get_unique_tags()
         logging.info("New list of tags: " + str(unique_tags))
         logging.info("Spent " + str(ai.cost) + " $ for tag analysis")
        
-
+    # Remove all documents from the database which until now could not be filled
+    # with enough valuable information
     def filter_incomplete_documents(self):
         new_list = {}
         for doc in [d for d in self.file_list.pdf_documents.values() if not d.has_sufficient_information()]:
@@ -91,25 +83,6 @@ class autoPDFtagger:
         for doc in [d for d in self.file_list.pdf_documents.values() if not d.has_sufficient_information()]:
             print(os.path.join(doc.relative_path, doc.file_name))
 
-    def set_override(self, override="confidence"):
-        self.override = override
-        pass
-
-    def change_filenames(self):
-        # Implementieren der Logik zum Ändern der Dateinamen
-        pass
-
-    def reset_folder_structure(self):
-        # Logik zum Zurücksetzen der Ordnerstruktur
-        pass
-
-    def ai_organize_folder_structure(self):
-        # Logik zur Optimierung der Ordnerstruktur
-        pass
-
-    def export_to_folder(self, folder_name):
-        # Implementieren der Logik zum Kopieren von Dateien in einen neuen Ordner
-        pass
 
     def export_database_to_json(self, file_name):
         self.file_list.export_to_json_complete(file_name)

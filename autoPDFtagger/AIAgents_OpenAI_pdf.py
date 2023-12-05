@@ -1,3 +1,9 @@
+# Here, the task-specific AI agents for text analysis, 
+# image analysis, and keyword/tag analysis are specified. 
+# The general logic for API communication with OpenAI is 
+# established in the parent classes AIAgent and AIAgent_OpenAI
+# (see AIAgents.py).
+
 from autoPDFtagger.AIAgents import AIAgent_OpenAI
 from autoPDFtagger.AIAgents import OpenAI_model_pricelist
 import logging
@@ -12,9 +18,9 @@ import re
 import copy
 import tiktoken
 
+# IMAGE-Analysis
 class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
     def __init__(self):
-        
         system_message = f"""
         You are a helpful assistant analyzing images inside of documents. 
         Based on the shown images, provide the following information:\n
@@ -29,10 +35,60 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
         you use the given filename, pathname and ocr-analyzed text. You always 
         answer in a specified JSON-Format which is given in the question. """
         
+        # calling parent class constructor
         super().__init__(model="gpt-4-vision-preview", system_message=system_message)
 
         self.response_format="json_object"
+    
+    # Main function of this class: Try to extract relevant metadata
+    # out of a PDFDocument (pdf_document) by analyzing their images
+    # and return result as a json-string
+    def analyze_images(self, pdf_document: PDFDocument):
+
+        # Prevent modifying the original document
+        working_doc = copy.deepcopy(pdf_document)
         
+        # For the general requirement of this function, 
+        # I have different approaches, which vary depending 
+        # on the structure of the document. In the case of a 
+        # scanned document, at least the first page should be 
+        # completely analyzed, as it is where most of the relevant 
+        # information (title, subject, date) can be expected. 
+        # Subsequent pages should only be examined for cost reasons 
+        # if the collected information is insufficient. This approach 
+        # is implemented in the function process_images_by_page.
+
+        # In cases where the document is not a scanned one, but an 
+        # originally digital document, images contained within it 
+        # (of a certain minimum size) can also hold valuable information. 
+        # These images can be analyzed in blocks (currently 3 at a time) 
+        # by GPT. We start with the largest images. At least one block 
+        # will be analyzed. Additional blocks only if the quality of the 
+        # metadata is not yet sufficient (similar to process_images_by_pages). 
+        # This approach is specified by the function process_images_by_size.
+
+        # No scanned document
+        if pdf_document.image_coverage < 100: 
+            logging.info("Analyzing smaller Images")
+            # Wir sortieren alle Bilder mit einer bestimmten Mindestgröße und 
+            # fangen von oben an, diese in 5er Gruppen in einzelnen Anfragen 
+            # an GPT-Vision zu schicken, so lange, bis entweder alle Bilder
+            # analysiert sind oder has_sufficient_information true ergibt
+            working_doc = self.process_images_by_size(working_doc)
+
+        # Scanned document
+        if pdf_document.image_coverage >= 100: 
+            # Hier alle Seiten als Bild GTP-Vision vorlegen, welche weniger als 100 Wörter enthalten
+            logging.info("Recognizing scanned document")
+            working_doc = self.process_images_by_page(working_doc)
+
+        return working_doc.to_api_json()
+
+    # A generic function to ask GPT to analyze a list of Images (list_imgaes_base64)
+    # in context of information of a PDFDocument (document)
+    # The decision regarding the selection of images and their 
+    # extraction from the document is made separately, therefore 
+    # these must be passed as additional parameters.
     def send_image_request(self, document: PDFDocument, list_images_base64):
         logging.info("Asking GPT-Vision for analysis of " + str(len(list_images_base64)) + " Images found in " + document.get_absolute_path())
         
@@ -51,7 +107,7 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
             "text": user_message
         }]
 
-        # Einzelne Bilder der Nachricht zufügen
+        # Add individual images to the message
         for base64_image in list_images_base64:
             image_content = {
                 "type": "image_url",
@@ -71,26 +127,6 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
             logging.error("API-Call failed")
             logging.error(e)
             return None
-        
-    def analyze_images(self, pdf_document: PDFDocument):
-        working_doc = copy.deepcopy(pdf_document)
-        
-        # No scanned document
-        if pdf_document.image_coverage < 100: 
-            logging.info("Analyzing smaller Images")
-            # Wir sortieren alle Bilder mit einer bestimmten Mindestgröße und 
-            # fangen von oben an, diese in 5er Gruppen in einzelnen Anfragen 
-            # an GPT-Vision zu schicken, so lange, bis entweder alle Bilder
-            # analysiert sind oder has_sufficient_information true ergibt
-            working_doc = self.process_images_by_size(working_doc)
-
-        # Scanned document
-        if pdf_document.image_coverage >= 100: 
-            # Hier alle Seiten als Bild GTP-Vision vorlegen, welche weniger als 100 Wörter enthalten
-            logging.info("Recognizing scanned document")
-            working_doc = self.process_images_by_page(working_doc)
-
-        return working_doc.to_api_json()
 
     def process_images_by_size(self, pdf_document: PDFDocument):
         # Create a list of all images from each page
@@ -128,16 +164,15 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
     def process_images_by_page(self, pdf_document: PDFDocument):
         for page in pdf_document.pages:
             logging.debug(f"Checking Page {page['page_number']} looking for largest image")
-            # Überspringe die Seite, wenn keine Bilder vorhanden sind
-            # oder ausreichend Wörter vorhanden sind
-            if 'max_img_xref' not in page or not page['max_img_xref'] or page['words_count'] > 100:
-                logging.debug("Page not analyzed: " + str(page['words_count']) + " words")
+            # Skip page if no images are present
+            if 'max_img_xref' not in page or not page['max_img_xref']:
+                logging.debug("Page not analyzed: (no images)")
                 continue
 
-            # Hole das größte Bild der Seite
+            # Get the largest image of the site (assuming it to be the scan-image)
             image_base64 = pdf_document.get_png_image_base64_by_xref(page['max_img_xref'])
 
-            # Übergib das Bild zur Analyse
+            # Send it to GPT
             logging.info("Asking AI for analyzing scanned page")
             response = self.send_image_request(pdf_document, [image_base64])
           
@@ -147,7 +182,7 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
                 logging.error("API-Call for image analysis failed")
                 logging.error(e)
 
-            # Überprüfe, ob ausreichend Informationen vorliegen
+            # Only proceed if the information about the document is still insufficient
             if pdf_document.has_sufficient_information():
                 logging.info("Document information sufficient, proceeding.")
                 return pdf_document
@@ -156,27 +191,7 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
         logging.info("No more pages available.")
         return pdf_document
 
-    def add_message_with_images(self, text, list_images, role="user"):
-        message_content = [
-        {
-            "type": "text",
-            "text": text,
-        }
-        ]
-
-        # Einzelne Bilder der Nachricht zufügen
-        for base64_image in list_images:
-            image_content = {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{base64_image}"
-                }
-            }
-            message_content.append(image_content)
-
-
-        self.messages.append({"role": role, "content": message_content})
-
+# TEXT-Analysis
 class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
     def __init__(self):
         
@@ -212,20 +227,22 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
             "}"
         )
 
-
-
+        # Parent constructor
         super().__init__(model="gpt-4-1106-preview", system_message=system_message)
 
         self.response_format="json_object"
-        
+    
+    # Main working function to get info about a PDFDocument by
+    # sending a GPT-API-Request
     def analyze_text(self, pdf_document: PDFDocument):
        
         # Step 1: Analyze the number of potentially meaningful words
+        # to decide which model to use
+        # GPT-3.5 is good enough for long texts and much cheaper. 
+        # Especially in shorter texts, GPT-4 gives much more high-quality answers
         word_count = len([word for word in re.split(r'\W+', pdf_document.pdf_text) if len(word) >= 3])
         model_choice = "gpt-3.5-turbo-1106" if word_count > 20 else "gpt-4-1106-preview"
         #model_choice = "gpt-4-1106-preview" # for test purposes
-        
-        self.log_file = "api.log"
 
         logging.debug("Opting for " + model_choice)
         self.set_model(model_choice)
@@ -236,22 +253,32 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
             + pdf_document.get_short_description()
         )
         
+        # in case of very long text, we have to shorten it depending on 
+        # the specific token-limit of the actual model
+
         # Optimize request data
+        # Convert message-list to str
         request_test_str = pprint.pformat(self.messages)
+        # estimate token-number for request
         num_tokens = num_tokens_from_string(request_test_str)
-        tokens_required = num_tokens + 500 # estimate 500 Tokens for answer
+        # estimate 500 Tokens for answer
+        tokens_required = num_tokens + 500
         
-        # max tokens stored in price list table
+        # max tokens of the actual model stored in price list table
         diff_to_max =  tokens_required - OpenAI_model_pricelist[self.model][2]
-        if diff_to_max > 0: # message too long > we need to shorten it
-            message = message[:-(diff_to_max*3)] # estimating 3 characters per Token
+        if diff_to_max > 0: # message too long 
+            # we need to shorten it
+            # estimating 3 characters per Token
+            message = message[:-(diff_to_max*3)] 
+            logging.info("PDF-Text needs to be shortened due to token_limit by " + str(diff_to_max*3) + " characters.")
 
         self.add_message(message, role="user")
     
         primary_response = super().send_request(temperature=0.7, response_format = self.response_format)
         return primary_response
  
-        
+        # At this point, a secondary request could be implemented to 
+        # optimize the result (draft below)
 
         # self.add_message(primary_response, role="assistant")
 
@@ -273,6 +300,7 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
         #return secondary_response
 
 
+# TAG/KEYWORD-Analysis
 class AIAgent_OpenAI_pdf_tag_analysis(AIAgent_OpenAI):
     def __init__(self):
         
@@ -304,7 +332,14 @@ class AIAgent_OpenAI_pdf_tag_analysis(AIAgent_OpenAI):
 
         response = super().send_request(temperature=0.3, response_format = self.response_format)
         
-        message2 = "Reevaluate your response. Ensure that only synonymous tags are consolidated and that no information is lost in the process. Try to find the most specific/useful name for each tag. Preserve the original language. Check if meaningful tags are preserved and the response is complete and correct. Respond in the same JSON format."
+        # Now we do a second request to optimize the result
+        message2 = """
+        Reevaluate your response. Ensure that only synonymous tags are consolidated 
+        and that no information is lost in the process. Try to find the most specific/useful 
+        name for each tag. Preserve the original language. Check if meaningful tags 
+        are preserved and the response is complete and correct. 
+        Respond in the same JSON format.
+        """
         self.add_message(response, "assistant")
         self.add_message(message2, "user")
 
