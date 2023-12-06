@@ -12,13 +12,14 @@ def main():
     parser.add_argument("--config-file", help="Specify path to configuration file. Defaults to ~/.autoPDFtagger.conf", default=os.path.expanduser("~/.autoPDFtagger.conf"))
     parser.add_argument("-b", "--base-directory", help="Set base directory", nargs='?', default=None, const="./")
     parser.add_argument("-j", "--json", help="Path to output JSON file")
-    parser.add_argument("-d", "--debug", help="Debug level (0: no debug, 1: basic debug, 2: detailed debug)", type=int, choices=[0, 1, 2], default=2)
+    parser.add_argument("-d", "--debug", help="Debug level (0: no debug, 1: basic debug, 2: detailed debug)", type=int, choices=[0, 1, 2], default=1)
     parser.add_argument("-t", "--ai-text-analysis", help="Do an AI text analysis", action="store_true")
     parser.add_argument("-i", "--ai-image-analysis", help="Do an AI image analysis", action="store_true")
     parser.add_argument("-c", "--ai-tag-analysis", help="Do an AI tag analysis", action="store_true")
     parser.add_argument("-e", "--export", help="Copy Documents to a target folder", nargs='?', default=None, const=None)
-    parser.add_argument("-l", "--list-incomplete", help="List incomplete documents", action="store_true")
-    parser.add_argument("-x", "--filter-incomplete", help="Only apply action to incomplete documents", action="store_true")
+    parser.add_argument("-l", "--list", help="List documents stored in database", action="store_true")
+    parser.add_argument("--filter-incomplete", help="Only apply action to incomplete documents", action="store_true")
+    parser.add_argument("--filter-complete", help="Only apply action to complete documents", action="store_true")
 
     args = parser.parse_args()
 
@@ -51,6 +52,10 @@ def main():
         logging.info("Deleting complete files from database")
         archive.filter_incomplete_documents()
 
+    if args.filter_complete:
+        logging.info("Deleting incomplete files from database")
+        archive.filter_complete_documents()
+
     if len(archive.file_list.pdf_documents)==0:
         logging.info("No documents in list.")
         return
@@ -70,16 +75,16 @@ def main():
         logging.info("Exporting files to {args.export}")
         archive.file_list.export_to_folder(args.export)
 
-    if args.list_incomplete:
-        logging.info("Listing incomplete documents")
-        archive.show_incomplete_documents()
+    if args.list:
+        logging.info("File stored in database:")
+        archive.print_file_list()
 
     # Save results to JSON-file if set
     if args.json:
-        output_json = archive.file_list.export_to_json_complete(args.json)
+        output_json = archive.file_list.export_to_json_file(args.json)
         logging.info(f"Database saved to {args.json}")
     else: # print to terminal
-        output_json = archive.file_list.export_to_json_without_ocr()
+        output_json = archive.file_list.export_to_json()
         print(output_json)
 
 
