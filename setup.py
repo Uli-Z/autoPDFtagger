@@ -9,7 +9,6 @@ setup(
     author_email='uli_z@posteo.de',
     url='https://github.com/Uli-Z/autoPDFtagger',
     install_requires=[
-        "borb==2.1.19.2",
         "PyMuPDF==1.23.6",
         "openai==1.3.7",
         "pytz==2022.7",
