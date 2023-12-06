@@ -25,7 +25,7 @@ class PDFList:
             self.pdf_documents[abs_path] = pdf_document
 
 
-    def export_to_json_without_ocr(self):
+    def export_to_json(self):
         pdf_list = [pdf_doc.to_dict() for pdf_doc in self.pdf_documents.values()]
         for pdf_doc_dict in pdf_list:
             pdf_doc_dict.pop("ocr_text", None)
@@ -42,7 +42,7 @@ class PDFList:
             return False
         
         if os.path.isdir(folder_or_file):
-            # Der angegebene Pfad ist ein Ordner
+            # Folder? 
             logging.info("Scanning folder " +folder_or_file )
             for root, _, files in os.walk(folder_or_file):
                 for file in files:
@@ -51,15 +51,14 @@ class PDFList:
                         pdf_document = PDFDocument(file_path, base_dir)
                         self.add_pdf_document(pdf_document)
         elif os.path.isfile(folder_or_file) and folder_or_file.endswith(".pdf"):
-            # Der angegebene Pfad ist eine einzelne PDF-Datei
+            # No folder, single pdf file
             pdf_document = PDFDocument(folder_or_file, base_dir)
             self.add_pdf_document(pdf_document)
         else:
-            # Der Pfad ist ungültig oder keine PDF-Datei oder Ordner
-            logging.error(f"Ungültiger Pfad oder keine PDF-Datei oder Ordner: {folder_or_file}")
+            logging.error(f"Invalid path or PDF file: {folder_or_file}")
 
     def get_sorted_pdf_filenames(self):
-        # Extrahiere die Dateinamen aller PDF-Dokumente
+        # Create list of filenames
         sorted_pdf_filenames = sorted(self.pdf_documents.keys())
         return sorted_pdf_filenames
 
@@ -77,33 +76,18 @@ class PDFList:
     
     def apply_tag_replacements_to_all(self, replacements):
         """
-        Wendet Tag-Ersetzungen auf alle PDF-Dokumente in der Liste an.
-        :param replacements: Liste von Dicts mit Original- und Ersatz-Tags
+        Apply a tag replacement list to all documents
         """
         for pdf_document in self.pdf_documents.values():
             pdf_document.apply_tag_replacements(replacements)
 
-    def set_tags_specificity_to_all(self, specificity_info):
-        """
-        Setzt die Spezifität der Tags für alle PDF-Dokumente in der Liste.
-        :param specificity_info: Liste von Dicts mit Tag-Namen und Spezifität
-        """
-        for pdf_document in self.pdf_documents.values():
-            pdf_document.set_tags_specificity(specificity_info)
 
-
-    def export_to_json_complete(self, filename):
-        """
-        Speichert die gesamte Liste von PDF-Dokumenten als JSON in einer Datei.
-        """
+    def export_to_json_file(self, filename):
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump([doc.to_dict() for doc in self.pdf_documents.values()], f, indent=4)
     
 
     def import_from_json(self, filename):
-        """
-        Lädt die Liste von PDF-Dokumenten aus einer JSON-Datei.
-        """
         try:
             with open(filename, 'r', encoding='utf-8') as f:
                 data = json.load(f)

@@ -79,8 +79,17 @@ class autoPDFtagger:
             new_list[doc.get_absolute_path()] = doc
         self.file_list.pdf_documents = new_list
 
-    def show_incomplete_documents(self):
-        for doc in [d for d in self.file_list.pdf_documents.values() if not d.has_sufficient_information()]:
+    # Remove all documents from the database
+    # with enough valuable information
+    def filter_complete_documents(self):
+        new_list = {}
+        for doc in [d for d in self.file_list.pdf_documents.values() if d.has_sufficient_information()]:
+            print(os.path.join(doc.relative_path, doc.file_name))
+            new_list[doc.get_absolute_path()] = doc
+        self.file_list.pdf_documents = new_list
+
+    def print_file_list(self):
+        for doc in self.file_list.pdf_documents.values():
             print(os.path.join(doc.relative_path, doc.file_name))
 
 

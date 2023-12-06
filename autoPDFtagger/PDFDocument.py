@@ -636,9 +636,7 @@ class PDFDocument:
 
     def has_sufficient_information(self): 
         return (self.title_confidence >= 7 and 
-            self.creation_date_confidence >= 7 and
-            self.subject_confidence >= 7 and
-            self.importance_confidence >= 7)
+            self.creation_date_confidence >= 7)
     
     def get_creation_date_as_str(self):
         return self.creation_date.strftime("%Y-%m-%d") if self.creation_date else None
