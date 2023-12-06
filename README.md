@@ -32,9 +32,9 @@ At the moment, there exists a functional prototype in the form of a terminal pro
 - **Accuracy and Reliability**: This initial version is a proof-of-concept and may have limitations. It's designed to create copies rather than alter original files.
 - **Metadata Editing**: Altering metadata could potentially invalidate certain documents. Be careful with digital signed documents.
 
-## What you need to run this program
+## Requirements to run this program
 - Python
-- An OpenAI-API-Key with access to _gpt-4-vision-preview model_
+- An **OpenAI-API-Key with access to gpt-4-vision-preview model**
 - Calculate Costs about 0.03 $ per image-processed PDF-Page
 
 ## Installation
