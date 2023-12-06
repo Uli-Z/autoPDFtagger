@@ -23,7 +23,7 @@ autoPDFtagger is a Python tool designed for efficient home-office organization, 
 In the advancing digital age, many documents are now delivered digitally, yet significant documents often still arrive in paper form. Looking towards a digital future, the consolidation of these documents into a unified digital archive becomes increasingly valuable. Simple scanning using smartphone cameras has made this practical. However, the reliability of existing OCR technologies and their limited ability to effectively index non-textual content like drawings or photos hampers the searchability of these documents. autoPDFtagger aims to bridge this gap by offering AI-assisted analysis and organization of PDF files, enhancing their searchability and organization with a level of precision comparable to human effort.
 
 ## Current Status
-At the moment, there exists a functional prototype in the form of a terminal program with a Python module, which demonstrates its functionality and has already achieved impressive results for me. For a broader application, many detailed improvements are certainly necessary, especially in error handling and documentation.
+At the moment, there exists a functional prototype in the form of a terminal program with a Python module, which demonstrates its functionality and has already achieved impressive results for me. For a broader application, many detailed improvements are certainly necessary, especially in testing, promt-optimization, error handling and documentation.
 
 ## Caution and Considerations / Disclaimer
 
@@ -135,12 +135,13 @@ $ autoPDFtagger pdf_archive -tic -e new_archive
 ## Future Development
 
 - **Implementing an AI-API-Cache to save cost for testing**
+- **Cost Control**: Implementing features for monitoring and managing API usage costs.
 - **Graphical User Interface**: Developing a more user-friendly interface.
 - **HTML Viewer App**: A proposed app to visualize the JSON database and integrate it with the file archive.
-- **Cost Control**: Implementing features for monitoring and managing API usage costs.
 - **Integration and Compatibility**:
   - Expanding to other AI APIs and exploring local AI model integration.
   - Ensuring compatibility with applications like paperless-ngx.
+- Enhancing tag organization and developing hierarchical information through the application of clustering algorithms on a vector database
 
 ## License
 
