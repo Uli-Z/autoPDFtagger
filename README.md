@@ -22,17 +22,20 @@ autoPDFtagger is a Python tool designed for efficient home-office organization, 
 
 In the advancing digital age, many documents are now delivered digitally, yet significant documents often still arrive in paper form. Looking towards a digital future, the consolidation of these documents into a unified digital archive becomes increasingly valuable. Simple scanning using smartphone cameras has made this practical. However, the reliability of existing OCR technologies and their limited ability to effectively index non-textual content like drawings or photos hampers the searchability of these documents. autoPDFtagger aims to bridge this gap by offering AI-assisted analysis and organization of PDF files, enhancing their searchability and organization with a level of precision comparable to human effort.
 
+## Current Status
+At the moment, there exists a functional prototype in the form of a terminal program with a Python module, which demonstrates its functionality and has already achieved impressive results for me. For a broader application, many detailed improvements are certainly necessary, especially in error handling and documentation.
+
 ## Caution and Considerations / Disclaimer
 
 - **Data Privacy**: PDF content is transmitted to OpenAI servers for analysis. While OpenAI claims non-use of API inputs for training, sensitivity in handling private documents is advised.
 - **Cost Control**: Be aware of the costs associated with OpenAI API usage, which is based on request volume. Analysis of a single page costs around 0.05 $.
 - **Accuracy and Reliability**: This initial version is a proof-of-concept and may have limitations. It's designed to create copies rather than alter original files.
-- **Metadata Editing**: Altering metadata could potentially invalidate certain documents.
+- **Metadata Editing**: Altering metadata could potentially invalidate certain documents. Be careful with digital signed documents.
 
 ## What you need to run this program
 - Python
-- An OpenAI-API-Key
-- Calculate Costs about 0.05 $ per processed PDF-Page
+- An OpenAI-API-Key with access to _gpt-4-vision-preview model_
+- Calculate Costs about 0.03 $ per image-processed PDF-Page
 
 ## Installation
  ```shell
@@ -113,8 +116,8 @@ $ autoPDFtagger pdf_archive -tic -e new_archive
 - In addition to the terminal program, a Python module autoPDFtagger is available for integration with other software. Check the code for the interface details.
 - The analysis of files includes not just the filename but also the local file path relative to a base directory (Base-Directory). By default, when folders are specified, the respective folder is set as the base directory for all files down to the subfolders. In some cases, it may be sensible to manually set a different base directory.
 - Metadata management uses a "confidence logic". This means data is only updated if the (estimated) certainty/confidence is higher than the existing data. This aims for incremental improvement of information but can sometimes lead to inconsistent results.
-- To reduce costs, a fallback to the GPT-3.5 Turbo model is possible. However, this significantly reduces the quality of analyses. Optimizing the prompts would certainly be beneficial
-
+- The text analysis of documents in the current configuration is carried out with the help of gpt-3.5-turbo-1106. With a context window of 16k, even larger documents can be analyzed at an affordable price of under $0.01. In my tests, the quality has proven to be sufficient. Only for very short documents does gpt-4 seem to bring a significant benefit. Therefore, the program automatically uses gpt-4 for short texts (~100 words).
+- Image analysis is the most time-consuming and expensive process, which is why the algorithm is also adjusted here. At the time of creation, only the gpt-4-vision-preview model exists. The current approach is to analyze only the first page for scanned documents. Subsequent pages are only analyzed if the relevant metadata could not be determined with sufficient confidence. A similar logic exists for digitally created PDFs, where contained images are only analyzed until the information quality is sufficient.
 
 ## Code Structure
 
