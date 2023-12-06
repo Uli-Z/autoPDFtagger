@@ -134,7 +134,7 @@ $ autoPDFtagger pdf_archive -tic -e new_archive
 
 ## Future Development
 
-- **Implementing an AI-API-Cache to save cost for testing**
+- **Implementing an AI-API-Cache to save cost and time for testing**
 - **Cost Control**: Implementing features for monitoring and managing API usage costs.
 - **Graphical User Interface**: Developing a more user-friendly interface.
 - **HTML Viewer App**: A proposed app to visualize the JSON database and integrate it with the file archive.
