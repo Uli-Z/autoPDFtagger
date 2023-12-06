@@ -55,7 +55,9 @@ API-Key = {INSERT YOUR API-KEY}
 ## Usage
  ```shell
 $ autoPDFtagger --help
-usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j JSON] [-d {0,1,2}] [-t] [-i] [-c] [-e EXPORT [EXPORT ...]] [-l] [-x] input_items [input_items ...]
+usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j JSON] [-d {0,1,2}] [-t] [-i] [-c]
+                     [-e [EXPORT]] [-l] [--filter-incomplete] [--filter-complete]
+                     input_items [input_items ...]
 
 Smart PDF-analyzing Tool
 
@@ -77,12 +79,41 @@ options:
                         Do an AI image analysis
   -c, --ai-tag-analysis
                         Do an AI tag analysis
-  -e EXPORT, --export EXPORT
+  -e [EXPORT], --export [EXPORT]
                         Copy Documents to a target folder
-  -l, --list-incomplete
-                        List incomplete documents
-  -x, --filter-incomplete
-                        Only apply action to incomplete documents
+  -l, --list            List documents stored in database
+  --filter-incomplete   Only apply action to incomplete documents
+  --filter-complete     Only apply action to complete documents
+PS C:\Users\ulric\Github\test> autoPDFtagger --help
+usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j JSON] [-d {0,1,2}] [-t] [-i] [-c] [-e [EXPORT]] [-l] [--filter-incomplete]
+                     [--filter-complete]
+                     input_items [input_items ...]
+
+Smart PDF-analyzing Tool
+
+positional arguments:
+  input_items           List of input PDFs and folders, alternativly you can use a JSON-file
+
+options:
+  -h, --help            show this help message and exit
+  --config-file CONFIG_FILE
+                        Specify path to configuration file. Defaults to ~/.autoPDFtagger.conf
+  -b [BASE_DIRECTORY], --base-directory [BASE_DIRECTORY]
+                        Set base directory
+  -j JSON, --json JSON  Path to output JSON file
+  -d {0,1,2}, --debug {0,1,2}
+                        Debug level (0: no debug, 1: basic debug, 2: detailed debug)
+  -t, --ai-text-analysis
+                        Do an AI text analysis
+  -i, --ai-image-analysis
+                        Do an AI image analysis
+  -c, --ai-tag-analysis
+                        Do an AI tag analysis
+  -e [EXPORT], --export [EXPORT]
+                        Copy Documents to a target folder
+  -l, --list            List documents stored in database
+  --filter-incomplete   Only apply action to incomplete documents
+  --filter-complete     Only apply action to complete documents
 ```
 
 ## Examples
