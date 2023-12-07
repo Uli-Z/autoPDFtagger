@@ -3,6 +3,7 @@ import logging
 from autoPDFtagger.config import config
 from autoPDFtagger.PDFList import PDFList
 from autoPDFtagger import AIAgents_OpenAI_pdf
+import traceback
 
 class autoPDFtagger:
     def __init__(self):
@@ -13,7 +14,7 @@ class autoPDFtagger:
     def add_file(self, path: str, base_dir = None):
         # if a json-file is given, we import it
         if path.endswith(".json"):
-            self.file_list.import_from_json(path)
+            self.file_list.import_from_json_file(path)
             return
         if base_dir and not os.path.exists(base_dir):
             logging.error(f"Basedir {base_dir} does not exist")
@@ -23,6 +24,11 @@ class autoPDFtagger:
         
         # Read folder oder PDF-file
         self.file_list.add_pdf_documents_from_folder(path, base_dir)
+
+    def file_analysis(self):
+        for document in self.file_list.pdf_documents.values():
+            logging.info(f"... {document.file_name}")
+            document.analyze_file()
 
     def ai_text_analysis(self):
         logging.info("Asking AI to analyze PDF-Text")
@@ -40,6 +46,7 @@ class autoPDFtagger:
             except Exception as e: 
                 logging.error(document.file_name)
                 logging.error(f"Text analysis failed. Error message: {e}")
+                logging.error(traceback.format_exception())
         logging.info(f"Spent {cost:.4f} $ for text analysis")
 
 
@@ -72,19 +79,17 @@ class autoPDFtagger:
        
     # Remove all documents from the database which until now could not be filled
     # with enough valuable information
-    def filter_incomplete_documents(self):
+    def keep_incomplete_documents(self, threshold=7):
         new_list = {}
-        for doc in [d for d in self.file_list.pdf_documents.values() if not d.has_sufficient_information()]:
-            print(os.path.join(doc.relative_path, doc.file_name))
+        for doc in [d for d in self.file_list.pdf_documents.values() if d.has_sufficient_information(threshold)]:
             new_list[doc.get_absolute_path()] = doc
         self.file_list.pdf_documents = new_list
 
     # Remove all documents from the database
     # with enough valuable information
-    def filter_complete_documents(self):
+    def keep_complete_documents(self, threshold=7):
         new_list = {}
-        for doc in [d for d in self.file_list.pdf_documents.values() if d.has_sufficient_information()]:
-            print(os.path.join(doc.relative_path, doc.file_name))
+        for doc in [d for d in self.file_list.pdf_documents.values() if not d.has_sufficient_information(threshold)]:
             new_list[doc.get_absolute_path()] = doc
         self.file_list.pdf_documents = new_list
 
@@ -94,6 +99,57 @@ class autoPDFtagger:
 
 
     def export_database_to_json(self, file_name):
-        self.file_list.export_to_json_complete(file_name)
+        self.file_list.export_to_json_file(file_name)
 
-    # Hinzufügen weiterer notwendiger Hilfsfunktionen und Logik
+    # Get basic statistics about database
+    def get_stats(self):
+
+        total_documents = len(self.file_list.pdf_documents)
+        total_pages = sum([len(doc.pages) for doc in self.file_list.pdf_documents.values()])
+        total_images = sum([doc.get_image_number() for doc in self.file_list.pdf_documents.values()])
+        total_text_tokens = sum([len(doc.get_pdf_text().split()) // 3 for doc in self.file_list.pdf_documents.values()])
+
+        # A very rough estimate for expected costs to do analysis over the actual data
+        estimated_text_analysis_cost_lower = ((total_text_tokens + total_documents * 1000) / 1000) * 0.001
+        estimated_text_analysis_cost_upper = estimated_text_analysis_cost_lower * 10 # in case of using gpt-4
+        estimated_image_analysis_cost = [
+            total_images * 0.03, # if every single image is analyzed
+            total_pages * 0.03 # if only the first page is analyzed
+            ]
+        unique_tags = len(self.file_list.get_unique_tags())
+        estimated_tag_analysis_cost = unique_tags * 0.01
+
+        stats = {
+            "Total Documents": total_documents,
+            "Total Pages": total_pages,
+            "Total Text Tokens (approx.)": total_text_tokens,
+            "Total Images": total_images,
+            "Unique Tags": unique_tags,
+            "Estimated Text Analysis Cost ($)": f"{estimated_text_analysis_cost_lower:.2f} - {estimated_text_analysis_cost_upper:.2f}",
+            "Estimated Image Analysis Cost ($)": f"{min(estimated_image_analysis_cost):.2f} - {max(estimated_image_analysis_cost):.2f}",
+            "Estimated Tag Analysis Cost ($)": estimated_tag_analysis_cost,
+            "Confidence-index Histogram": self.create_confidence_histogram(self.file_list)
+        }
+
+        return stats
+    
+    def create_confidence_histogram(self, pdf_list):
+        # Step 1: Collect rounded confidence_index values
+        confidence_counts = {}
+        for pdf in pdf_list.pdf_documents.values():
+            confidence = round(pdf.get_confidence_index())
+            confidence_counts[confidence] = confidence_counts.get(confidence, 0) + 1
+
+        # Step 2: Determine the scale factor for histogram
+        max_count = max(confidence_counts.values())
+        max_resolution = 1
+        scale_factor = min(max_resolution, 30 / max_count)
+
+        # Step 3: Generate the histogram
+        histogram = "\n"
+        for i in range(min(confidence_counts.keys()), max(confidence_counts.keys()) + 1):
+            count = confidence_counts.get(i, 0)
+            bar_length = max(round(count * scale_factor), count > 0)  # Ensure at least one character for non-zero counts
+            histogram += f"{i}: {'#' * bar_length} ({count})\n"
+
+        return histogram

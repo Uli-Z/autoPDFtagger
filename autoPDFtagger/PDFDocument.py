@@ -47,11 +47,12 @@ class PDFDocument:
         # Validate and initialize file paths
         if not os.path.exists(path):
             raise ValueError(f"File {path} does not exist")
+        if not os.path.exists(base_directory):
+            raise ValueError(f"Basedirectory {base_directory} does not exist")
         self.file_name = os.path.basename(path)
         self.folder_path_abs = os.path.dirname(os.path.abspath(path))
         self.base_directory_abs = os.path.abspath(base_directory)
         self.relative_path = os.path.relpath(self.folder_path_abs, self.base_directory_abs)
-        logging.info("Reading/analyzing " + self.file_name + " (Relative: " + self.relative_path + ")")
 
         # Initialize parameters for analysis
         self.subject = ""
@@ -64,22 +65,26 @@ class PDFDocument:
         self.tags_confidence = []
         self.importance = None
         self.importance_confidence = 0
-        self.embedding = []
-        self.has_signatures = False
 
         # Analyze document
-        self.pdf_text = self.read_ocr()
         self.modification_date = self.get_modification_date()
         self.pages = []
         self.images = []
+        self.images_already_analyzed = False
         self.image_coverage = None
-        self.analyze_document_images()
-        self.analyze_document()
+        self.pdf_text = ""
 
     def get_absolute_path(self):
         return os.path.join(self.folder_path_abs, self.file_name)
 
-    def analyze_document(self):
+    # Get text stored inside the document
+    def get_pdf_text(self):
+        if not self.pdf_text:
+            self.pdf_text = self.read_ocr()
+        return self.pdf_text
+            
+
+    def analyze_file(self):
         """
         Performs an analysis of the document. 
         It extracts the date, title, and tags from the document's filename and relative path.
@@ -182,19 +187,19 @@ class PDFDocument:
             pdf_document = fitz.open(self.get_absolute_path())
 
             # Initialize text extraction
-            self.pdf_text = ""
+            pdf_text = ""
             for page_num in range(len(pdf_document)):
                 page = pdf_document[page_num]
                 page_text = page.get_text("text")
-                self.pdf_text += page_text
+                pdf_text += page_text
 
             # Clean text by removing unwanted characters and line breaks
-            self.pdf_text = self.pdf_text.replace('\n', ' ').replace('\r', ' ')
-            self.pdf_text = re.sub(r'[^a-zA-Z0-9 .:äöüÄÖÜß/]+', '', self.pdf_text)
+            pdf_text = pdf_text.replace('\n', ' ').replace('\r', ' ')
+            pdf_text = re.sub(r'[^a-zA-Z0-9 .:äöüÄÖÜß/]+', '', pdf_text)
 
             pdf_document.close()
-            logging.debug(f"Extracted text from {self.file_name}:\n{self.pdf_text}\n----------------\n")
-            return self.pdf_text
+            #logging.debug(f"Extracted text from {self.file_name}:\n{self.pdf_text}\n----------------\n")
+            return pdf_text
 
         except Exception as e:
             logging.error(f"Failed to extract text from {self.file_name}:\nError Message: {e}")
@@ -272,7 +277,7 @@ class PDFDocument:
                     # Parse the date string according to the matched format
                     date_object = datetime.strptime(date_string, date_format)
                     # Set the creation date with a high confidence level
-                    self.set_creation_date(date_object.strftime("%Y-%m-%d"), 10)
+                    self.set_creation_date(date_object.strftime("%Y-%m-%d"), 8)
                     return
                 except ValueError:
                     # Continue searching if the current format does not match
@@ -366,6 +371,9 @@ class PDFDocument:
         Analyzes images in the PDF document. It calculates the total image area and page area
         and counts the number of words on each page.
         """
+        if self.images_already_analyzed:
+            return
+        
         pdf_path = self.get_absolute_path()
         pdf_document = fitz.open(pdf_path)
 
@@ -395,7 +403,8 @@ class PDFDocument:
         pdf_document.close()
 
         # Calculate the percentage of the document covered by images
-        self.image_coverage = (self.total_image_area / self.total_page_area) * 100 if self.total_page_area > 0 else 0
+        self.image_coverage = (self.total_image_area / self.total_page_area) * 100 if self.total_page_area > 0 else 0        
+        self.images_already_analyzed = True
 
 
     def analyze_page_data(self, page, page_num, max_img_xref):
@@ -517,16 +526,8 @@ class PDFDocument:
             raise ValueError("Length of tag_list and confidence_list must be equal.")
 
         for tag, confidence in zip(tag_list, confidence_list):
-            if confidence >= 7:  # Process only tags with sufficient confidence
-                if tag in self.tags:
-                    index = self.tags.index(tag)
-                    if confidence > self.tags_confidence[index]:
-                        self.tags_confidence[index] = confidence
-                else:
-                    self.tags.append(tag)
-                    self.tags_confidence.append(confidence)
-
-
+            self.tags.append(tag)
+            self.tags_confidence.append(confidence)
 
     def set_from_json(self, input_json):
         """
@@ -584,6 +585,20 @@ class PDFDocument:
             return self.tags_confidence[index]
         return False
 
+    # Calculate a single number to represent the overall confidence
+    # of the documents metadata to be uses to sort and filter documents. 
+    # In the future we need to find a more sophisticated method...
+    def get_confidence_index(self, treshold=7):
+        # Tage average of all confidences excluding tags
+        average = (
+            self.creation_date_confidence
+            + self.title_confidence
+            + self.subject_confidence
+            + self.importance_confidence
+        ) / 4
+        # Title and creation date are most relevant, they define the lower limit
+        return min(average, self.title_confidence, self.creation_date_confidence)
+
     def add_parent_tags_recursive(self, tag_hierarchy: dict):
         """
         Recursively adds parent tags from a tag hierarchy.
@@ -631,16 +646,19 @@ class PDFDocument:
         return (
             "Filename: " + self.file_name + ", "
             + "Path: " + self.relative_path + "\n"
-            + "Content: " + self.pdf_text
+            + "Content: " + self.get_pdf_text()
         )
 
-    def has_sufficient_information(self): 
-        return (self.title_confidence >= 7 and 
-            self.creation_date_confidence >= 7)
+    def has_sufficient_information(self, threshold=7): 
+        return self.get_confidence_index() >= threshold
     
     def get_creation_date_as_str(self):
         return self.creation_date.strftime("%Y-%m-%d") if self.creation_date else None
     
+    def get_image_number(self): 
+        self.analyze_document_images()
+        return len(self.images)
+
     def create_new_filename(self, format_str="%Y-%m-%d-{TITLE}.pdf"):
         """
         Creates a new filename based on a specified format.
