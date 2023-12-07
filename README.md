@@ -52,12 +52,37 @@ language = {YOUR LANGUAGE}
 [OPENAI-API]
 API-Key = {INSERT YOUR API-KEY}
 ```
+
+## Program Structure
+
+The program is fundamentally structured as follows:
+
+### 1. Read Database (Input)
+- By specifying PDF files
+- By specifying a JSON file
+- By entering JSON via standard input
+
+### 2. Modify Database (Processing)
+- Filtering files based on quality criteria
+- Analysis of existing metadata, file name, folder structure (`file analysis`)
+- Analysis of the contained text (`text analysis`)
+- Analysis of the contained images (`image analysis`)
+- Analysis and sorting of tags (`tag analysis`)
+
+### 3. Output Database (Output)
+- As JSON via standard output
+- As JSON in a file
+- In the form of PDF files with updated metadata included
+- As statistics
+
+**Note:** Principally, (almost) all options are combinable. The order of the individual steps is fixed, however; they are processed in the order mentioned above. Instead, the use of piping in the terminal is explicitly considered, allowing to pass the state of the database to another instance of the program. This makes it possitble to check and modify each step (e.g., first text analysis, then filtering by quality, followed by image analysis, then re-filtering, and finally exporting the PDF files). 
+
+
 ## Usage
  ```shell
 $ autoPDFtagger --help
-usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j JSON] [-d {0,1,2}] [-t] [-i] [-c]
-                     [-e [EXPORT]] [-l] [--filter-incomplete] [--filter-complete]
-                     input_items [input_items ...]
+usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j [JSON]] [-d {0,1,2}] [-f] [-t] [-i] [-c] [-e [EXPORT]] [-l] [--keep-above [KEEP_ABOVE]] [--keep-below [KEEP_BELOW]] [--calc-stats]
+                     [input_items ...]
 
 Smart PDF-analyzing Tool
 
@@ -70,9 +95,11 @@ options:
                         Specify path to configuration file. Defaults to ~/.autoPDFtagger.conf
   -b [BASE_DIRECTORY], --base-directory [BASE_DIRECTORY]
                         Set base directory
-  -j JSON, --json JSON  Path to output JSON file
+  -j [JSON], --json [JSON]
+                        Output JSON-Database to stdout. If filename provided, save it to file
   -d {0,1,2}, --debug {0,1,2}
                         Debug level (0: no debug, 1: basic debug, 2: detailed debug)
+  -f, --file-analysis   Try to conventionally extract metadata from file, file name and folder structure
   -t, --ai-text-analysis
                         Do an AI text analysis
   -i, --ai-image-analysis
@@ -82,64 +109,42 @@ options:
   -e [EXPORT], --export [EXPORT]
                         Copy Documents to a target folder
   -l, --list            List documents stored in database
-  --filter-incomplete   Only apply action to incomplete documents
-  --filter-complete     Only apply action to complete documents
-PS C:\Users\ulric\Github\test> autoPDFtagger --help
-usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j JSON] [-d {0,1,2}] [-t] [-i] [-c] [-e [EXPORT]] [-l] [--filter-incomplete]
-                     [--filter-complete]
-                     input_items [input_items ...]
-
-Smart PDF-analyzing Tool
-
-positional arguments:
-  input_items           List of input PDFs and folders, alternativly you can use a JSON-file
-
-options:
-  -h, --help            show this help message and exit
-  --config-file CONFIG_FILE
-                        Specify path to configuration file. Defaults to ~/.autoPDFtagger.conf
-  -b [BASE_DIRECTORY], --base-directory [BASE_DIRECTORY]
-                        Set base directory
-  -j JSON, --json JSON  Path to output JSON file
-  -d {0,1,2}, --debug {0,1,2}
-                        Debug level (0: no debug, 1: basic debug, 2: detailed debug)
-  -t, --ai-text-analysis
-                        Do an AI text analysis
-  -i, --ai-image-analysis
-                        Do an AI image analysis
-  -c, --ai-tag-analysis
-                        Do an AI tag analysis
-  -e [EXPORT], --export [EXPORT]
-                        Copy Documents to a target folder
-  -l, --list            List documents stored in database
-  --filter-incomplete   Only apply action to incomplete documents
-  --filter-complete     Only apply action to complete documents
+  --keep-above [KEEP_ABOVE]
+                        Before applying actions, filter out and retain only the documents with a confidence index greater than or equal to a specific value (default: 7).
+  --keep-below [KEEP_BELOW]
+                        Analogous to --keep-above. Retain only document with an index less than specified.
+  --calc-stats          Calculate statistics and (roughly!) estimate costs for different analyses
 ```
 
 ## Examples
-Read all pdf files from a folder *pdf_archive* and store information in a JSON-database *files.json*:
+Read all pdf files from a folder *pdf_archive*, do a basic file analysis (-f) and store information in a JSON-database *files.json* (-j [filename]):
 ```shell
-$ autoPDFtagger pdf_archive -j files.json
+$ autoPDFtagger ./pdf_archive --file-analysis --json allfiles.json
 ```
 
 Read a previous created JSON-database an do an AI-text-analysis, storing the results in a new JSON-file
 ```shell
-$ autoPDFtagger files.json -t -j files2.json
+$ autoPDFtagger allfiles.json --ai-text-analysis --json textanalysis.json
 ```
 
-Do an AI-image-analysis and tag-analyis on these files
+Do an AI-image-analysis for all files with estimated low-quality metadata.
 ```shell
-$ autoPDFtagger files2.json -i -c -j files3.json
+$ autoPDFtagger textanalysis.json --keep-below --ai-image-analysis --json imageanalysis.json
 ```
 
-Copy the file to a new folder *new_archive* setting new metadata and assigning new filenames. The original folder structure remains unchanged.
+Recollect all together, analyse and organize tags
 ```shell
-$ autoPDFtagger files3.json -e new_archive
+$ autoPDFtagger textanalysis.json imageanalysis.json --ai-tag-analysis --json final.json
 ```
 
-Do all the above steps in one command: 
+Copy the files to a new folder *new_archive* setting new metadata and assigning new filenames. The original folder structure remains unchanged.
 ```shell
-$ autoPDFtagger pdf_archive -tic -e new_archive
+$ autoPDFtagger final.json -e ./new_archive
+```
+
+Do everything at once: 
+```shell
+$ autoPDFtagger pdf_archive -ftic -e new_archive
 ```
 
 ## Random Technical Aspects / Dive Deeper If You Want
@@ -147,8 +152,10 @@ $ autoPDFtagger pdf_archive -tic -e new_archive
 - In addition to the terminal program, a Python module autoPDFtagger is available for integration with other software. Check the code for the interface details.
 - The analysis of files includes not just the filename but also the local file path relative to a base directory (Base-Directory). By default, when folders are specified, the respective folder is set as the base directory for all files down to the subfolders. In some cases, it may be sensible to manually set a different base directory.
 - Metadata management uses a "confidence logic". This means data is only updated if the (estimated) certainty/confidence is higher than the existing data. This aims for incremental improvement of information but can sometimes lead to inconsistent results.
-- The text analysis of documents in the current configuration is carried out with the help of gpt-3.5-turbo-1106. With a context window of 16k, even larger documents can be analyzed at an affordable price of under $0.01. In my tests, the quality has proven to be sufficient. Only for very short documents does gpt-4 seem to bring a significant benefit. Therefore, the program automatically uses gpt-4 for short texts (~100 words).
-- Image analysis is the most time-consuming and expensive process, which is why the algorithm is also adjusted here. At the time of creation, only the gpt-4-vision-preview model exists. The current approach is to analyze only the first page for scanned documents. Subsequent pages are only analyzed if the relevant metadata could not be determined with sufficient confidence. A similar logic exists for digitally created PDFs, where contained images are only analyzed until the information quality is sufficient.
+- Keyword **confidence-index**: Within the program, it's possible to filter the database by this value. What's the rationale behind it? Primarily, it's a quickly improvised solution to enable sorting of database entries by the quality of their metadata. The AI itself assesses how well it can answer the given questions based on the available information and sets a confidence level. There are individual confidence values for the title, subject, and creation date. To consolidate these into a single value, the average is initially calculated. However, since the title and creation date are particularly critical, the minimum value out of the average, title, and creation date is used
+- The **text analysis** of documents in the current configuration is carried out with the help of gpt-3.5-turbo-1106. With a context window of 16k, even larger documents can be analyzed at an affordable price of under $0.01. In my tests, the quality has proven to be sufficient. Only for very short documents does gpt-4 seem to bring a significant benefit. Therefore, the program automatically uses gpt-4 for short texts (~100 words).
+- **Image analysis** is the most time-consuming and expensive process, which is why the algorithm is also adjusted here. At the time of creation, only the gpt-4-vision-preview model exists. The current approach is to analyze only the first page for scanned documents. Subsequent pages are only analyzed if the relevant metadata could not be determined with sufficient confidence. A similar logic exists for digitally created PDFs, where contained images are only analyzed until the information quality is sufficient.
+
 
 ## Code Structure
 

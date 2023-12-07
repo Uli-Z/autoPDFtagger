@@ -39,8 +39,6 @@ class AIAgent:
 
 OpenAI_model_pricelist = { # $ per 1 k token, [input, output, token_limit]
     "gpt-3.5-turbo-1106": [0.001, 0.002, 16385],
-    "gpt-4": [0.03, 0.06, 8192],
-    "gpt-4-32k": [0.06, 0.12, 32768],
     "gpt-4-1106-preview": [0.01, 0.03, 4096], # Max  = 128000, reduced for cost reasons
     "gpt-4-vision-preview": [0.01, 0.03, 4096]
 }
@@ -60,7 +58,6 @@ class AIAgent_OpenAI(AIAgent):
         # Cost-Control
         self.max_tokens=4096
         self.cost = 0
-        self.log_file = "api_OPENAI.log"
 
 
     def add_message(self, content, role="user"):
