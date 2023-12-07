@@ -44,6 +44,7 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
     # out of a PDFDocument (pdf_document) by analyzing their images
     # and return result as a json-string
     def analyze_images(self, pdf_document: PDFDocument):
+        pdf_document.analyze_document_images()
 
         # Prevent modifying the original document
         working_doc = copy.deepcopy(pdf_document)
@@ -240,7 +241,7 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
         # to decide which model to use
         # GPT-3.5 is good enough for long texts and much cheaper. 
         # Especially in shorter texts, GPT-4 gives much more high-quality answers
-        word_count = len([word for word in re.split(r'\W+', pdf_document.pdf_text) if len(word) >= 3])
+        word_count = len([word for word in re.split(r'\W+', pdf_document.get_pdf_text()) if len(word) >= 3])
         model_choice = "gpt-3.5-turbo-1106" if word_count > 20 else "gpt-4-1106-preview"
         #model_choice = "gpt-4-1106-preview" # for test purposes
 
@@ -324,7 +325,6 @@ class AIAgent_OpenAI_pdf_tag_analysis(AIAgent_OpenAI):
         self.response_format="json_object"
         
     def send_request(self, tags):
-        self.log_file = "api.log"
         # Step 1: Simplify and summarize tags
         message = f"Improve the following tags: {tags}"
         

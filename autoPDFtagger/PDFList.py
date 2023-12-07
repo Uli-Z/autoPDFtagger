@@ -19,11 +19,11 @@ class PDFList:
         if abs_path in self.pdf_documents:
             # If document already exists, data will be updated corresponding
             # to confidence-data (more actual data will be preserved)
-            logging.debug(f"File {abs_path} already in database. Updating meta data.")
+            logging.info(f"File {abs_path} already in database. Updating meta data.")
             self.pdf_documents[abs_path].set_from_dict(pdf_document.to_dict())
         else:
             self.pdf_documents[abs_path] = pdf_document
-
+            logging.info(f"File added: {pdf_document.file_name}")
 
     def export_to_json(self):
         pdf_list = [pdf_doc.to_dict() for pdf_doc in self.pdf_documents.values()]
@@ -86,30 +86,38 @@ class PDFList:
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump([doc.to_dict() for doc in self.pdf_documents.values()], f, indent=4)
     
-
-    def import_from_json(self, filename):
-        try:
-            with open(filename, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        
-        except Exception as e:
-            logging.error(f"Error loading JSON-File: {e}")
-            return []
-
+    def import_from_json(self, json_text):
+        data = json.loads(json_text) 
         for d in data:
             try:
                 pdf_document = self.create_PDFDocument_from_json(d)
+                logging.debug(f"Adding {pdf_document.get_absolute_path()} from JSON-file to database")
                 self.add_pdf_document(pdf_document)
-                logging.debug(f"Added {pdf_document.get_absolute_path()} from JSON-file to database")
             except Exception as e:
-                logging.error(f"Could not import file from JSON-File. Error-message: {e}. Data: {pprint.pformat(d)}")
-                traceback.print_exc()
+                logging.error(e)
+                traceback.print_exc
+
+
+    def import_from_json_file(self, filename):
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                self.import_from_json(f.read())
+        except Exception as e:
+            logging.error(f"Error loading JSON-File: {e}")
+            logging.error(traceback.format_exc())
+            return []
+
 
     def create_PDFDocument_from_json(self,data):
-        file_path = os.path.join(data['folder_path_abs'], data['file_name'])
-        pdf_document = PDFDocument(file_path, data['base_directory_abs'])
-        pdf_document.set_from_dict(data)
-        return pdf_document
+        try:
+            file_path = os.path.join(data['folder_path_abs'], data['file_name'])
+            pdf_document = PDFDocument(file_path, data['base_directory_abs'])
+            pdf_document.set_from_dict(data)
+            return pdf_document
+        except Exception as e: 
+            logging.error(f"Could not import file from JSON-File. Error-message: {e}. Data: {pprint.pformat(data)}")
+            traceback.print_exc()
+            return None
         
     def update_from_json(self, filename):
         try:
