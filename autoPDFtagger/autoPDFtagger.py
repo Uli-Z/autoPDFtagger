@@ -12,10 +12,6 @@ class autoPDFtagger:
 
     # Add file to database
     def add_file(self, path: str, base_dir = None):
-        # if a json-file is given, we import it
-        if path.endswith(".json"):
-            self.file_list.import_from_json_file(path)
-            return
         if base_dir and not os.path.exists(base_dir):
             logging.error(f"Basedir {base_dir} does not exist")
             base_dir = None
