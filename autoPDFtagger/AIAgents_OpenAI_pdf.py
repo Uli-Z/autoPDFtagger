@@ -26,7 +26,7 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
         Based on the shown images, provide the following information:\n
         1. Creation date of the document.\n
         2. A short title of 3-4 words.\n
-        3. A short description of 3-4 sentences.\n
+        3. A short summary of 3-4 sentences.\n
         4. Suitable keywords/tags related to the content.\n
         5. Rate the importance of the document on a scale from 0 (unimportant) to 10 (vital).\n
         6. Rate your confidence for each of the above points on a scale from 0 (no information) 
@@ -54,7 +54,7 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
         # on the structure of the document. In the case of a 
         # scanned document, at least the first page should be 
         # completely analyzed, as it is where most of the relevant 
-        # information (title, subject, date) can be expected. 
+        # information (title, summary, date) can be expected. 
         # Subsequent pages should only be examined for cost reasons 
         # if the collected information is insufficient. This approach 
         # is implemented in the function process_images_by_page.
@@ -195,7 +195,7 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
 # TEXT-Analysis
 class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
     def __init__(self):
-        
+        self.log_file = "api.log"
         system_message = (
             "You are a helpful assistant analyzing OCR outputs. It's important "
             "to remember that these outputs may represent only a part of the document. "
@@ -203,7 +203,7 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
             "Provide the following information:\n"
             "1. Creation date of the document.\n"
             "2. A short title of 3-4 words.\n"
-            "3. A meaningful description of 3-4 sentences.\n"
+            "3. A meaningful summary of 3-4 sentences.\n"
             "4. Suitable keywords/tags related to the content.\n"
             "5. Rate the importance of the document on a scale from 0 (unimportant) to "
             "10 (vital).\n"
@@ -215,8 +215,8 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
             "If you are seeing a blank document, your title-confidence is alway 0."
             "You always answer in a specified JSON-Format like in this example:\n"
             "{\n"
-            "    'description': '[description]',\n"
-            "    'description_confidence': [number],\n"
+            "    'summary': '[summary]',\n"
+            "    'summary_confidence': [number],\n"
             "    'title': '[title]',\n"
             "    'title_confidence': [number],\n"
             "    'creation_date': '[Date YY-mm-dd]',\n"
