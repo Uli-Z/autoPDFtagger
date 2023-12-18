@@ -81,13 +81,14 @@ The program is fundamentally structured as follows:
 ## Usage
  ```shell
 $ autoPDFtagger --help
-usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j [JSON]] [-d {0,1,2}] [-f] [-t] [-i] [-c] [-e [EXPORT]] [-l] [--keep-above [KEEP_ABOVE]] [--keep-below [KEEP_BELOW]] [--calc-stats]
+usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j [JSON]] [-s [CSV]] [-d {0,1,2}] [-f] [-t] [-i] [-c] [-e [EXPORT]] [-l]
+                     [--keep-above [KEEP_ABOVE]] [--keep-below [KEEP_BELOW]] [--calc-stats]
                      [input_items ...]
 
 Smart PDF-analyzing Tool
 
 positional arguments:
-  input_items           List of input PDFs and folders, alternativly you can use a JSON-file
+  input_items           List of input PDFs and folders, alternativly you can use a JSON- or CSV-file
 
 options:
   -h, --help            show this help message and exit
@@ -97,6 +98,8 @@ options:
                         Set base directory
   -j [JSON], --json [JSON]
                         Output JSON-Database to stdout. If filename provided, save it to file
+  -s [CSV], --csv [CSV]
+                        Output CSV-Database to specified file
   -d {0,1,2}, --debug {0,1,2}
                         Debug level (0: no debug, 1: basic debug, 2: detailed debug)
   -f, --file-analysis   Try to conventionally extract metadata from file, file name and folder structure
@@ -110,7 +113,8 @@ options:
                         Copy Documents to a target folder
   -l, --list            List documents stored in database
   --keep-above [KEEP_ABOVE]
-                        Before applying actions, filter out and retain only the documents with a confidence index greater than or equal to a specific value (default: 7).
+                        Before applying actions, filter out and retain only the documents with a confidence index greater than or equal to a specific       
+                        value (default: 7).
   --keep-below [KEEP_BELOW]
                         Analogous to --keep-above. Retain only document with an index less than specified.
   --calc-stats          Calculate statistics and (roughly!) estimate costs for different analyses
@@ -152,7 +156,7 @@ $ autoPDFtagger pdf_archive -ftic -e new_archive
 - In addition to the terminal program, a Python module autoPDFtagger is available for integration with other software. Check the code for the interface details.
 - The analysis of files includes not just the filename but also the local file path relative to a base directory (Base-Directory). By default, when folders are specified, the respective folder is set as the base directory for all files down to the subfolders. In some cases, it may be sensible to manually set a different base directory.
 - Metadata management uses a "confidence logic". This means data is only updated if the (estimated) certainty/confidence is higher than the existing data. This aims for incremental improvement of information but can sometimes lead to inconsistent results.
-- Keyword **confidence-index**: Within the program, it's possible to filter the database by this value. What's the rationale behind it? Primarily, it's a quickly improvised solution to enable sorting of database entries by the quality of their metadata. The AI itself assesses how well it can answer the given questions based on the available information and sets a confidence level. There are individual confidence values for the title, subject, and creation date. To consolidate these into a single value, the average is initially calculated. However, since the title and creation date are particularly critical, the minimum value out of the average, title, and creation date is used
+- Keyword **confidence-index**: Within the program, it's possible to filter the database by this value. What's the rationale behind it? Primarily, it's a quickly improvised solution to enable sorting of database entries by the quality of their metadata. The AI itself assesses how well it can answer the given questions based on the available information and sets a confidence level. There are individual confidence values for the title, summary, and creation date. To consolidate these into a single value, the average is initially calculated. However, since the title and creation date are particularly critical, the minimum value out of the average, title, and creation date is used
 - The **text analysis** of documents in the current configuration is carried out with the help of gpt-3.5-turbo-1106. With a context window of 16k, even larger documents can be analyzed at an affordable price of under $0.01. In my tests, the quality has proven to be sufficient. Only for very short documents does gpt-4 seem to bring a significant benefit. Therefore, the program automatically uses gpt-4 for short texts (~100 words).
 - **Image analysis** is the most time-consuming and expensive process, which is why the algorithm is also adjusted here. At the time of creation, only the gpt-4-vision-preview model exists. The current approach is to analyze only the first page for scanned documents. Subsequent pages are only analyzed if the relevant metadata could not be determined with sufficient confidence. A similar logic exists for digitally created PDFs, where contained images are only analyzed until the information quality is sufficient.
 

@@ -9,10 +9,11 @@ from autoPDFtagger.config import config
 def main():
      # ArgumentParser-Setup für CLI-Optionen
     parser = argparse.ArgumentParser(description="Smart PDF-analyzing Tool")
-    parser.add_argument("input_items", nargs="*", help="List of input PDFs and folders, alternativly you can use a JSON-file")
+    parser.add_argument("input_items", nargs="*", help="List of input PDFs and folders, alternativly you can use a JSON- or CSV-file")
     parser.add_argument("--config-file", help="Specify path to configuration file. Defaults to ~/.autoPDFtagger.conf", default=os.path.expanduser("~/.autoPDFtagger.conf"))
     parser.add_argument("-b", "--base-directory", help="Set base directory", nargs='?', default=None, const="./")
     parser.add_argument("-j", "--json", nargs="?", const=None, default=argparse.SUPPRESS, help="Output JSON-Database to stdout. If filename provided, save it to file")
+    parser.add_argument("-s", "--csv", nargs="?", const=None, help="Output CSV-Database to specified file")
     parser.add_argument("-d", "--debug", help="Debug level (0: no debug, 1: basic debug, 2: detailed debug)", type=int, choices=[0, 1, 2], default=1)
     parser.add_argument("-f", "--file-analysis", help="Try to conventionally extract metadata from file, file name and folder structure", action="store_true")   
     parser.add_argument("-t", "--ai-text-analysis", help="Do an AI text analysis", action="store_true")     
@@ -80,7 +81,7 @@ def main():
         archive.file_analysis()
 
     def is_output_option_set():
-        return args.export is not None or hasattr(args, "json")
+        return args.export is not None or hasattr(args, "json") or args.csv is not None
 
     if args.ai_text_analysis:
         if is_output_option_set():
@@ -123,6 +124,10 @@ def main():
         else: # print to stdout
             output_json = archive.file_list.export_to_json()
             print(output_json)
+    # Save results to CSV-file if set
+    if args.csv is not None:
+        archive.file_list.export_to_csv_file(args.csv)
+
 
 
 if __name__ == "__main__":
