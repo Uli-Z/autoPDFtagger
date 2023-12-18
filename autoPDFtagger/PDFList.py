@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 import pprint
 import traceback
+import csv
 
 from autoPDFtagger.PDFDocument import PDFDocument
 
@@ -36,6 +37,19 @@ class PDFList:
         for pdf_document in self.pdf_documents.values():
             pdf_document.create_thumbnail(thumbnail_folder)
 
+    # Add single file (pdf, csv, json)
+    def add_file(self, file_path, base_dir):
+        if file_path.endswith(".pdf"):
+            pdf_document = PDFDocument(file_path, base_dir)
+            self.add_pdf_document(pdf_document)
+        elif file_path.endswith(".json"):
+            self.import_from_json_file(file_path)
+        elif file_path.endswith(".csv"):
+            self.import_from_csv_file(file_path)
+        else: 
+            logging.error(f"Invalid file type (skipped): {file_path}")
+
+    # Scan a folder for files
     def add_pdf_documents_from_folder(self, folder_or_file, base_dir):
         if not os.path.exists(folder_or_file) or not os.path.exists(base_dir):
             logging.error(str([folder_or_file, base_dir] )+ " does not exist")
@@ -46,16 +60,11 @@ class PDFList:
             logging.info("Scanning folder " +folder_or_file )
             for root, _, files in os.walk(folder_or_file):
                 for file in files:
-                    if file.endswith(".pdf"):
-                        file_path = os.path.join(root, file)
-                        pdf_document = PDFDocument(file_path, base_dir)
-                        self.add_pdf_document(pdf_document)
-        elif os.path.isfile(folder_or_file) and folder_or_file.endswith(".pdf"):
-            # No folder, single pdf file
-            pdf_document = PDFDocument(folder_or_file, base_dir)
-            self.add_pdf_document(pdf_document)
-        else:
-            logging.error(f"Invalid path or PDF file: {folder_or_file}")
+                    file_path = os.path.join(root, file)
+                    self.add_file(file_path, base_dir)
+                    
+        else: # existing file, no directory
+            self.add_file(folder_or_file, base_dir)
 
     def get_sorted_pdf_filenames(self):
         # Create list of filenames
@@ -86,12 +95,97 @@ class PDFList:
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump([doc.to_dict() for doc in self.pdf_documents.values()], f, indent=4)
     
+    def export_to_csv_file(self, filename):
+        try:
+            if not self.pdf_documents:
+                logging.warning("No documents to export.")
+                return
+
+            first_document = next(iter(self.pdf_documents.values()))
+            fieldnames = list(first_document.to_dict().keys())
+
+            with open(filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=';')
+                writer.writeheader()
+
+                for pdf_document in self.pdf_documents.values():
+                    # Convert the document to a dictionary
+                    pdf_dict = pdf_document.to_dict()
+
+                    # Convert lists to JSON strings
+                    for key, value in pdf_dict.items():
+                        if isinstance(value, list):
+                            pdf_dict[key] = json.dumps(value)
+                        else:
+                            pdf_dict[key] = str(value)
+
+                    writer.writerow(pdf_dict)
+
+            logging.info(f"Database exported to CSV: {filename}")
+        except Exception as e:
+            logging.error(f"Exporting to CSV-File failed: {e}\n" + traceback.format_exc())
+
+
+    def clean_csv_row(self, row):
+        data_types = {
+            "folder_path_abs": str,
+            "relative_path": str,
+            "base_directory_abs": str,
+            "file_name": str,
+            "summary": str,
+            "summary_confidence": float,
+            "title": str,
+            "title_confidence": float,
+            "creation_date": str,
+            "creation_date_confidence": float,
+            "tags": str,
+            "tags_confidence": str,
+            "importance": float,
+            "importance_confidence": float
+        }
+        
+        for key, value in row.items():
+            if key in ['tags', 'tags_confidence'] and value.startswith('[') and value.endswith(']'):
+                try:
+                    # Convert JSON string back to list
+                    row[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    raise ValueError(f"JSON decoding error for {key}: {value}")
+            else:
+                try:
+                    # Convert to appropriate data type
+                    row[key] = data_types[key](value)
+                except ValueError:
+                    raise ValueError(f"Value conversion error for {key}: {value}")
+
+        return row
+
+
+    def import_from_csv_file(self, filename):
+        try:
+            logging.info(f"Importing files from CSV-file: {filename}")
+            with open(filename, 'r', encoding='utf-8-sig') as csvfile:
+                reader = csv.DictReader(csvfile, delimiter=';')
+
+                # Process each row and create PDFDocument objects
+                for row in reader:
+                    try:
+                        row = self.clean_csv_row(row)
+                        pdf_document = self.create_PDFDocument_from_dict(row)
+                        if pdf_document:
+                            self.add_pdf_document(pdf_document)
+                    except:
+                        continue
+
+            logging.info("CSV-file processing completed")
+        except Exception as e:
+            logging.error(f"Importing from CSV-File failed: {e}\n" + traceback.format_exc())
+
     def import_from_json(self, json_text):
         data = json.loads(json_text) 
         for d in data:
             try:
-                pdf_document = self.create_PDFDocument_from_json(d)
-                logging.debug(f"Adding {pdf_document.get_absolute_path()} from JSON-file to database")
+                pdf_document = self.create_PDFDocument_from_dict(d)
                 self.add_pdf_document(pdf_document)
             except Exception as e:
                 logging.error(e)
@@ -101,14 +195,16 @@ class PDFList:
     def import_from_json_file(self, filename):
         try:
             with open(filename, 'r', encoding='utf-8') as f:
+                logging.info(f"Adding files from JSON-file: {filename}")
                 self.import_from_json(f.read())
+                logging.info("JSON-file processing completed")
         except Exception as e:
             logging.error(f"Error loading JSON-File: {e}")
             logging.error(traceback.format_exc())
             return []
 
 
-    def create_PDFDocument_from_json(self,data):
+    def create_PDFDocument_from_dict(self,data):
         try:
             file_path = os.path.join(data['folder_path_abs'], data['file_name'])
             pdf_document = PDFDocument(file_path, data['base_directory_abs'])
@@ -131,7 +227,7 @@ class PDFList:
                 if existing_doc:
                     existing_doc.set_from_dict(doc_data)
                 else:
-                    new_doc = self.create_PDFDocument_from_json(doc_data)
+                    new_doc = self.create_PDFDocument_from_dict(doc_data)
 
                     self.add_pdf_document(new_doc)
 

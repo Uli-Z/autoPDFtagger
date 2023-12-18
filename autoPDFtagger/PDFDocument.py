@@ -55,8 +55,8 @@ class PDFDocument:
         self.relative_path = os.path.relpath(self.folder_path_abs, self.base_directory_abs)
 
         # Initialize parameters for analysis
-        self.subject = ""
-        self.subject_confidence = 0
+        self.summary = ""
+        self.summary_confidence = 0
         self.title = ""
         self.title_confidence = 0
         self.creation_date = ""
@@ -115,12 +115,12 @@ class PDFDocument:
         # Update the metadata of the PDF document
         metadata = pdf_document.metadata
         metadata['title'] = self.title
-        metadata['subject'] = self.subject
+        metadata['summary'] = self.summary
         metadata['keywords'] = ', '.join(self.tags)
 
         # Storing additional information about confidences in keyword-list
         tags_confidence_str = ','.join([str(conf) for conf in self.tags_confidence])
-        metadata['keywords'] = f"{metadata['keywords']} - Metadata automatically updated, title_confidence={self.title_confidence}, subject_confidence={self.subject_confidence}, creation_date_confidence={self.creation_date_confidence}, tag_confidence={tags_confidence_str}"
+        metadata['keywords'] = f"{metadata['keywords']} - Metadata automatically updated, title_confidence={self.title_confidence}, summary_confidence={self.summary_confidence}, creation_date_confidence={self.creation_date_confidence}, tag_confidence={tags_confidence_str}"
 
         if self.creation_date:
             # Konvertiere das Datum in das PDF-Format
@@ -146,8 +146,8 @@ class PDFDocument:
             "relative_path": self.relative_path,
             "base_directory_abs": self.base_directory_abs,
             "file_name": self.file_name,
-            "subject": self.subject,
-            "subject_confidence": self.subject_confidence,
+            "summary": self.summary,
+            "summary_confidence": self.summary_confidence,
             "title": self.title,
             "title_confidence": self.title_confidence,
             "creation_date": self.get_creation_date_as_str(),
@@ -166,8 +166,8 @@ class PDFDocument:
         This JSON representation can be used for API interactions.
         """
         return json.dumps({
-            "subject": self.subject,
-            "subject_confidence": self.subject_confidence,
+            "summary": self.summary,
+            "summary_confidence": self.summary_confidence,
             "title": self.title,
             "title_confidence": self.title_confidence,
             "creation_date": self.get_creation_date_as_str(),
@@ -322,7 +322,7 @@ class PDFDocument:
 
     def extract_metadata(self):
         """
-        Extracts metadata such as title, subject, and keywords from the PDF document.
+        Extracts metadata such as title, summary, and keywords from the PDF document.
         Updates the class attributes based on the extracted metadata.
         """
         try:
@@ -335,12 +335,12 @@ class PDFDocument:
                 self.set_title(metadata['title'], 
                                metadata['title_confidence'] if 'title_confidence' in metadata else 9)  # Higher confidence for metadata-extracted title
 
-            # Extract and update the subject as the subject
-            if 'subject' in metadata and metadata['subject']:
-                self.set_subject(metadata['subject'], 
-                                     metadata['subject_confidence'] if 'subject_confidence' in metadata else 9)
+            # Extract and update the summary as the summary
+            if 'summary' in metadata and metadata['summary']:
+                self.set_summary(metadata['summary'], 
+                                     metadata['summary_confidence'] if 'summary_confidence' in metadata else 9)
 
-            # Extract and update the subject as the subject
+            # Extract and update the summary as the summary
             if 'creationDate' in metadata and metadata['creationDate']:
                 self.set_creation_date(metadata['creationDate'], 
                                      metadata['creationDate_confidence'] if 'creationDate_confidence' in metadata else 9)
@@ -497,14 +497,14 @@ class PDFDocument:
             self.creation_date_confidence = confidence
 
         
-    def set_subject(self, subject, confidence):
+    def set_summary(self, summary, confidence):
         """
-        Sets the subject of the document with a given confidence level.
-        The subject is updated only if the new confidence level is equal to or higher than the current level.
+        Sets the summary of the document with a given confidence level.
+        The summary is updated only if the new confidence level is equal to or higher than the current level.
         """
-        if confidence >= self.subject_confidence:
-            self.subject = subject
-            self.subject_confidence = confidence
+        if confidence >= self.summary_confidence:
+            self.summary = summary
+            self.summary_confidence = confidence
 
 
     def set_importance(self, importance, confidence):
@@ -557,9 +557,9 @@ class PDFDocument:
         if 'title' in input_dict and 'title_confidence' in input_dict:
             self.set_title(input_dict['title'], input_dict['title_confidence'])
 
-        # Update the subject if provided in the input dictionary
-        if 'subject' in input_dict and 'subject_confidence' in input_dict:
-            self.set_subject(input_dict['subject'], input_dict['subject_confidence'])
+        # Update the summary if provided in the input dictionary
+        if 'summary' in input_dict and 'summary_confidence' in input_dict:
+            self.set_summary(input_dict['summary'], input_dict['summary_confidence'])
 
         # Update the creation date if provided in the input dictionary
         if 'creation_date' in input_dict and 'creation_date_confidence' in input_dict:
@@ -593,7 +593,7 @@ class PDFDocument:
         average = (
             self.creation_date_confidence
             + self.title_confidence
-            + self.subject_confidence
+            + self.summary_confidence
             + self.importance_confidence
         ) / 4
         # Title and creation date are most relevant, they define the lower limit
