@@ -81,13 +81,14 @@ The program is fundamentally structured as follows:
 ## Usage
  ```shell
 $ autoPDFtagger --help
-usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j [JSON]] [-d {0,1,2}] [-f] [-t] [-i] [-c] [-e [EXPORT]] [-l] [--keep-above [KEEP_ABOVE]] [--keep-below [KEEP_BELOW]] [--calc-stats]
+usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j [JSON]] [-s [CSV]] [-d {0,1,2}] [-f] [-t] [-i] [-c] [-e [EXPORT]] [-l]
+                     [--keep-above [KEEP_ABOVE]] [--keep-below [KEEP_BELOW]] [--calc-stats]
                      [input_items ...]
 
 Smart PDF-analyzing Tool
 
 positional arguments:
-  input_items           List of input PDFs and folders, alternativly you can use a JSON-file
+  input_items           List of input PDFs and folders, alternativly you can use a JSON- or CSV-file
 
 options:
   -h, --help            show this help message and exit
@@ -97,6 +98,8 @@ options:
                         Set base directory
   -j [JSON], --json [JSON]
                         Output JSON-Database to stdout. If filename provided, save it to file
+  -s [CSV], --csv [CSV]
+                        Output CSV-Database to specified file
   -d {0,1,2}, --debug {0,1,2}
                         Debug level (0: no debug, 1: basic debug, 2: detailed debug)
   -f, --file-analysis   Try to conventionally extract metadata from file, file name and folder structure
@@ -110,7 +113,8 @@ options:
                         Copy Documents to a target folder
   -l, --list            List documents stored in database
   --keep-above [KEEP_ABOVE]
-                        Before applying actions, filter out and retain only the documents with a confidence index greater than or equal to a specific value (default: 7).
+                        Before applying actions, filter out and retain only the documents with a confidence index greater than or equal to a specific       
+                        value (default: 7).
   --keep-below [KEEP_BELOW]
                         Analogous to --keep-above. Retain only document with an index less than specified.
   --calc-stats          Calculate statistics and (roughly!) estimate costs for different analyses
