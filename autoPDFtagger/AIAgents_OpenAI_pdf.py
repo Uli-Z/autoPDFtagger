@@ -27,9 +27,10 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
         1. Creation date of the document.\n
         2. A short title of 3-4 words.\n
         3. A short summary of 3-4 sentences.\n
-        4. Suitable keywords/tags related to the content.\n
-        5. Rate the importance of the document on a scale from 0 (unimportant) to 10 (vital).\n
-        6. Rate your confidence for each of the above points on a scale from 0 (no information) 
+        4. Creator/Issuer\n
+        5. Suitable keywords/tags related to the content.\n
+        6. Rate the importance of the document on a scale from 0 (unimportant) to 10 (vital).\n
+        7. Rate your confidence for each of the above points on a scale from 0 (no information) 
         over 5 (possibly right, but only few hints) to 10 (very sure). 
         You always answer in {LANGUAGE} language.  For gathering information, 
         you use the given filename, pathname and ocr-analyzed text. You always 
@@ -204,10 +205,11 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
             "1. Creation date of the document.\n"
             "2. A short title of 3-4 words.\n"
             "3. A meaningful summary of 3-4 sentences.\n"
-            "4. Suitable keywords/tags related to the content.\n"
-            "5. Rate the importance of the document on a scale from 0 (unimportant) to "
+            "4. Creator/Issuer\n"
+            "5. Suitable keywords/tags related to the content.\n"
+            "6. Rate the importance of the document on a scale from 0 (unimportant) to "
             "10 (vital).\n"
-            "6. Rate your confidence for each of the above points on a scale "
+            "7. Rate your confidence for each of the above points on a scale "
             "from 0 (no information, text not readable) over 5 (possibly right, but only "
             "few hints about the content of the whole document) to 10 (very sure). "
             "You always answer in {LANGUAGE} language. For gathering information, "
@@ -221,6 +223,8 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
             "    'title_confidence': [number],\n"
             "    'creation_date': '[Date YY-mm-dd]',\n"
             "    'creation_date_confidence': [number],\n"
+            "    'creator': '[creator name]',\n"
+            "    'creator_confidence': [number],\n"
             "    'tags': ['[tag 1]', '[tag 2]', ...],\n"
             "    'tags_confidence': [[confidence tag 1], [confidence tag 2]],\n"
             "    'importance': [number],\n"

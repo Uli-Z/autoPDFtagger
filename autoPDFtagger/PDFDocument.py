@@ -61,6 +61,8 @@ class PDFDocument:
         self.title_confidence = 0
         self.creation_date = ""
         self.creation_date_confidence = 0
+        self.creator = ""
+        self.creator_confidence = 0
         self.tags = []
         self.tags_confidence = []
         self.importance = None
@@ -116,11 +118,12 @@ class PDFDocument:
         metadata = pdf_document.metadata
         metadata['title'] = self.title
         metadata['summary'] = self.summary
+        metadata['author'] = self.creator
         metadata['keywords'] = ', '.join(self.tags)
 
         # Storing additional information about confidences in keyword-list
         tags_confidence_str = ','.join([str(conf) for conf in self.tags_confidence])
-        metadata['keywords'] = f"{metadata['keywords']} - Metadata automatically updated, title_confidence={self.title_confidence}, summary_confidence={self.summary_confidence}, creation_date_confidence={self.creation_date_confidence}, tag_confidence={tags_confidence_str}"
+        metadata['keywords'] = f"{metadata['keywords']} - Metadata automatically updated by autoPDFtagger, title_confidence={self.title_confidence}, summary_confidence={self.summary_confidence}, creation_date_confidence={self.creation_date_confidence}, creator_confidence={self.creator_confidence}, tag_confidence={tags_confidence_str}"
 
         if self.creation_date:
             # Konvertiere das Datum in das PDF-Format
@@ -152,6 +155,8 @@ class PDFDocument:
             "title_confidence": self.title_confidence,
             "creation_date": self.get_creation_date_as_str(),
             "creation_date_confidence": self.creation_date_confidence,
+            "creator": self.creator,
+            "creator_confidence": self.creator_confidence,
             "tags": self.tags,
             "tags_confidence": self.tags_confidence,
             "importance": self.importance,
@@ -172,6 +177,8 @@ class PDFDocument:
             "title_confidence": self.title_confidence,
             "creation_date": self.get_creation_date_as_str(),
             "creation_date_confidence": self.creation_date_confidence,
+            "creator": self.creator,
+            "creator_confidence": self.creator_confidence,
             "tags": self.tags,
             "tags_confidence": self.tags_confidence,
             "importance": self.importance,
@@ -302,7 +309,7 @@ class PDFDocument:
         file_name = re.sub(r'^-|\.pdf$', '', file_name)
 
         # Set the extracted file name as the title
-        self.set_title(file_name, 6)
+        self.set_title(file_name, 3)
 
 
     def extract_tags_from_relative_path(self):
@@ -326,38 +333,40 @@ class PDFDocument:
         Updates the class attributes based on the extracted metadata.
         """
         try:
-            # Open the PDF document
             pdf_document = fitz.open(self.get_absolute_path())
             metadata = pdf_document.metadata
 
-            # Extract and update the title
-            if 'title' in metadata and metadata['title']:
-                self.set_title(metadata['title'], 
-                               metadata['title_confidence'] if 'title_confidence' in metadata else 9)  # Higher confidence for metadata-extracted title
+            # Default confidence value
+            default_confidence = 9.0
 
-            # Extract and update the summary as the summary
-            if 'summary' in metadata and metadata['summary']:
-                self.set_summary(metadata['summary'], 
-                                     metadata['summary_confidence'] if 'summary_confidence' in metadata else 9)
+            def extract_confidence(pattern, text, default_confidence):
+                """Extracts a confidence value using regex or returns the default value."""
+                match = re.search(pattern, text)
+                return float(match.group(1)) if match else default_confidence
 
-            # Extract and update the summary as the summary
-            if 'creationDate' in metadata and metadata['creationDate']:
-                self.set_creation_date(metadata['creationDate'], 
-                                     metadata['creationDate_confidence'] if 'creationDate_confidence' in metadata else 9)
 
-            # Extract and update the keywords as tags
-            if 'keywords' in metadata and metadata['keywords']:
-                # Regex to find the confidence values
-                confidences_match = re.search(r'tag_confidence=([\d,]+)', metadata['keywords'])
-                if confidences_match:
-                    confidences = [int(conf) for conf in confidences_match.group(1).split(',')]
-                    # Extract the keywords before the confidence information
-                    keywords = re.split(r' - Metadata automatically updated, .*', metadata['keywords'])[0].split(', ')
-                else:
-                    keywords = metadata['keywords'].split(', ')
-                    confidences = [7] * len(keywords)  # Default confidence
+            # Extract confidence values
+            keywords = metadata.get('keywords', '')
+            title_conf = extract_confidence(r"title_confidence=(\d+\.?\d*)", keywords, default_confidence)
+            summary_conf = extract_confidence(r"summary_confidence=(\d+\.?\d*)", keywords, default_confidence)
+            creation_date_conf = extract_confidence(r"creation_date_confidence=(\d+\.?\d*)", keywords, default_confidence)
+            creator_conf = extract_confidence(r"creator_confidence=(\d+\.?\d*)", keywords, default_confidence)
+            tags_conf_str = extract_confidence(r"tag_confidence=([\d,.]+)", keywords, '')
 
-                self.set_tags(keywords, confidences)
+            # Set metadata values if not empty
+            if metadata.get('title'):
+                self.set_title(metadata['title'], title_conf)
+            if metadata.get('summary'):
+                self.set_summary(metadata['summary'], summary_conf)
+            if metadata.get('creationDate'):
+                self.set_creation_date(metadata['creationDate'], creation_date_conf)
+            if metadata.get('author'):
+                self.set_creator(metadata['author'], creator_conf)
+
+            # Process tag confidence values
+            tag_confidences = [float(conf) for conf in tags_conf_str.split(',')] if tags_conf_str else [default_confidence]
+            keywords = metadata.get('keywords', '').split(', ')[:len(tag_confidences)]
+            self.set_tags(keywords, tag_confidences)
 
             pdf_document.close()
 
@@ -473,6 +482,7 @@ class PDFDocument:
         if confidence >= self.title_confidence:
             self.title = title
             self.title_confidence = confidence
+        else: logging.info("Title not set due to lower confidence-level")
 
     def set_creation_date(self, creation_date, confidence):
         """
@@ -492,9 +502,12 @@ class PDFDocument:
                 except ValueError:
                     continue  # Try the next format if the current one does not match
 
-        if date_obj and confidence >= self.creation_date_confidence:
-            self.creation_date = date_obj
-            self.creation_date_confidence = confidence
+        if date_obj:
+            if confidence >= self.creation_date_confidence:
+                self.creation_date = date_obj
+                self.creation_date_confidence = confidence
+            else: logging.info("Creation date not set due to lower confidence-level")
+        
 
         
     def set_summary(self, summary, confidence):
@@ -505,7 +518,18 @@ class PDFDocument:
         if confidence >= self.summary_confidence:
             self.summary = summary
             self.summary_confidence = confidence
+        else: logging.info("Summary not set due to lower confidence-level")
 
+    def set_creator(self, creator, confidence):
+        """
+        Sets the creator of the document with a given confidence level.
+        The creator is updated only if the new confidence level is equal to or higher than the current level.
+        """
+        if confidence >= self.creator_confidence:
+            self.creator = creator
+            self.creator_confidence = confidence
+        
+        else: logging.info("Creator not set due to lower confidence-level")
 
     def set_importance(self, importance, confidence):
         """
@@ -515,6 +539,7 @@ class PDFDocument:
         if confidence >= self.importance_confidence:
             self.importance = importance
             self.importance_confidence = confidence
+        else: logging.info("Importance not set due to lower confidence-level")
 
     def set_tags(self, tag_list, confidence_list):
         """
@@ -565,6 +590,11 @@ class PDFDocument:
         if 'creation_date' in input_dict and 'creation_date_confidence' in input_dict:
             self.set_creation_date(input_dict['creation_date'], input_dict['creation_date_confidence'])
 
+        # Update the creator if provided in the input dictionary
+        if 'creator' in input_dict and 'creator_confidence' in input_dict:
+            self.set_creator(input_dict['creator'], input_dict['creator_confidence'])
+
+
         # Update the importance if provided in the input dictionary
         if 'importance' in input_dict and 'importance_confidence' in input_dict:
             self.set_importance(input_dict['importance'], input_dict['importance_confidence'])
@@ -588,14 +618,15 @@ class PDFDocument:
     # Calculate a single number to represent the overall confidence
     # of the documents metadata to be uses to sort and filter documents. 
     # In the future we need to find a more sophisticated method...
-    def get_confidence_index(self, treshold=7):
+    def get_confidence_index(self):
         # Tage average of all confidences excluding tags
         average = (
             self.creation_date_confidence
             + self.title_confidence
             + self.summary_confidence
             + self.importance_confidence
-        ) / 4
+            + self.creator_confidence
+        ) / 5
         # Title and creation date are most relevant, they define the lower limit
         return min(average, self.title_confidence, self.creation_date_confidence)
 
@@ -659,7 +690,7 @@ class PDFDocument:
         self.analyze_document_images()
         return len(self.images)
 
-    def create_new_filename(self, format_str="%Y-%m-%d-{TITLE}.pdf"):
+    def create_new_filename(self, format_str="%Y-%m-%d-{CREATOR}-{TITLE}.pdf"):
         """
         Creates a new filename based on a specified format.
         The format can include date formatting strings and {TITLE} as a placeholder for the document title.
@@ -674,7 +705,7 @@ class PDFDocument:
 
         # Replace {TITLE} with the document title
         new_filename = date_str.replace('{TITLE}', self.title)
-        
+        new_filename = new_filename.replace('{CREATOR}', self.creator)
         # Store the new filename
         self.new_file_name = new_filename
         return self
