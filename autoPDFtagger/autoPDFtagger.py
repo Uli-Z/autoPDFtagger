@@ -33,7 +33,7 @@ class autoPDFtagger:
         for document in self.file_list.pdf_documents.values():
             
             ai = AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_text_analysis()
-
+            ai.log_file = "api.log"
             logging.info("... " + document.file_name) 
             try:
                 response = ai.analyze_text(document)

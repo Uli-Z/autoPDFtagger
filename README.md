@@ -79,7 +79,7 @@ The program is fundamentally structured as follows:
 - In the form of PDF files with updated metadata included
 - As statistics
 
-**Note:** Principally, (almost) all options are combinable. The order of the individual steps is fixed, however; they are processed in the order mentioned above. Instead, the use of piping in the terminal is explicitly considered, allowing to pass the state of the database to another instance of the program. This makes it possitble to check and modify each step (e.g., first text analysis, then filtering by quality, followed by image analysis, then re-filtering, and finally exporting the PDF files). 
+**Note:** Principally, (almost) all options are combinable. The order of the individual steps is fixed, however; they are processed in the order mentioned above. Instead, the use of piping in the terminal is explicitly considered, allowing to pass the state of the database to another instance of the program. This makes it possitble to check and modify each step (e.g., first text analysis, then filtering by quality, followed by image analysis, then re-filtering, and finally exporting the PDF files). Using JSON-Output, the results of the program can be piped directly to another instance of the program. 
 
 
 ## Usage
