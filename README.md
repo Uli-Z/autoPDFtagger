@@ -32,6 +32,10 @@ At the moment, there exists a functional prototype in the form of a terminal pro
 - **Accuracy and Reliability**: This initial version is a proof-of-concept and may have limitations. It's designed to create copies rather than alter original files.
 - **Metadata Editing**: Altering metadata could potentially invalidate certain documents. Be careful with digital signed documents.
 
+## Contribute ##
+
+If you find this tool helpful and have ideas to improve it, feel free to contribute. While I'm not a full-time programmer and i'm not feeling professional at all, any suggestions or enhancements are welcome. Submit bug reports, feature requests, or any other feedback. Thanks for stopping by!
+
 ## Requirements to run this program
 - Python
 - An **OpenAI-API-Key with access to gpt-4-vision-preview model**
