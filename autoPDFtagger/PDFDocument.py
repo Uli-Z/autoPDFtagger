@@ -309,7 +309,7 @@ class PDFDocument:
         file_name = re.sub(r'^-|\.pdf$', '', file_name)
 
         # Set the extracted file name as the title
-        self.set_title(file_name, 3)
+        self.set_title(file_name, 2)
 
 
     def extract_tags_from_relative_path(self):
@@ -337,7 +337,7 @@ class PDFDocument:
             metadata = pdf_document.metadata
 
             # Default confidence value
-            default_confidence = 9.0
+            default_confidence = 5
 
             def extract_confidence(pattern, text, default_confidence):
                 """Extracts a confidence value using regex or returns the default value."""

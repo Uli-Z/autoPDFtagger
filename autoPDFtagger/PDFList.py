@@ -138,6 +138,8 @@ class PDFList:
             "title_confidence": float,
             "creation_date": str,
             "creation_date_confidence": float,
+            "creator": str,
+            "creator_confidence": float,
             "tags": str,
             "tags_confidence": str,
             "importance": float,
@@ -166,15 +168,17 @@ class PDFList:
             logging.info(f"Importing files from CSV-file: {filename}")
             with open(filename, 'r', encoding='utf-8-sig') as csvfile:
                 reader = csv.DictReader(csvfile, delimiter=';')
-
+                
                 # Process each row and create PDFDocument objects
                 for row in reader:
                     try:
+                        logging.debug("Read row")
                         row = self.clean_csv_row(row)
                         pdf_document = self.create_PDFDocument_from_dict(row)
                         if pdf_document:
                             self.add_pdf_document(pdf_document)
-                    except:
+                    except Exception as e:
+                        logging.debug(traceback.format_exc())
                         continue
 
             logging.info("CSV-file processing completed")
