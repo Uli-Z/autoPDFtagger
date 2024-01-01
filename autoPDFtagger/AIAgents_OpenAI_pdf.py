@@ -196,7 +196,6 @@ class AIAgent_OpenAI_pdf_image_analysis(AIAgent_OpenAI):
 # TEXT-Analysis
 class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
     def __init__(self):
-        self.log_file = "api.log"
         system_message = (
             "You are a helpful assistant analyzing OCR outputs. It's important "
             "to remember that these outputs may represent only a part of the document. "
@@ -246,7 +245,7 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
         # GPT-3.5 is good enough for long texts and much cheaper. 
         # Especially in shorter texts, GPT-4 gives much more high-quality answers
         word_count = len([word for word in re.split(r'\W+', pdf_document.get_pdf_text()) if len(word) >= 3])
-        model_choice = "gpt-3.5-turbo-1106" if word_count > 20 else "gpt-4-1106-preview"
+        model_choice = "gpt-3.5-turbo-1106" if word_count > 100 else "gpt-4-1106-preview"
         #model_choice = "gpt-4-1106-preview" # for test purposes
 
         logging.debug("Opting for " + model_choice)
