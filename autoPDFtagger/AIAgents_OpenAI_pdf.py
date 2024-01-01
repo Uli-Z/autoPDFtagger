@@ -354,6 +354,7 @@ class AIAgent_OpenAI_pdf_tag_analysis(AIAgent_OpenAI):
             replacements = replacements['replacements']
         except Exception as e: 
             logging.error("Could not interpret AI answer for tag simplification: " + pprint.pformat(response))
+            logging.error(e)
             replacements = {}
 
         return replacements
