@@ -2,6 +2,47 @@ from types import SimpleNamespace
 
 import pytest
 
+import sys
+from pathlib import Path
+
+# Ensure project root is importable for the installed/editable package case
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Provide a minimal fallback for tiktoken in case it isn't installed
+try:
+    import tiktoken  # noqa: F401
+except Exception:  # pragma: no cover
+    import types
+
+    tiktoken = types.ModuleType("tiktoken")
+
+    class _Encoding:
+        @staticmethod
+        def encode(value):
+            return list(str(value))
+
+    def _encoding_for_model(_):
+        return _Encoding()
+
+    def _get_encoding(_):
+        return _Encoding()
+
+    tiktoken.encoding_for_model = _encoding_for_model
+    tiktoken.get_encoding = _get_encoding
+    sys.modules["tiktoken"] = tiktoken
+
+# Configure autoPDFtagger config early (module import time) so imports don't fail
+from autoPDFtagger.config import config as _config  # noqa: E402
+_config.clear()
+_config.read_dict(
+    {
+        "OPENAI-API": {"API-Key": "test-key"},
+        "DEFAULT": {"language": "English"},
+    }
+)
+
 
 @pytest.fixture(autouse=True)
 def configure_config():

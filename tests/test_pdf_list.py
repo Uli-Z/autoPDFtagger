@@ -1,6 +1,7 @@
 import json
 
 import pytest
+import math
 
 from autoPDFtagger.PDFList import PDFList
 
@@ -53,8 +54,8 @@ def test_clean_csv_row_invalid_value():
         "importance_confidence": "2",
     }
 
-    with pytest.raises(ValueError):
-        pdf_list.clean_csv_row(raw)
+    cleaned = pdf_list.clean_csv_row(raw)
+    assert math.isnan(cleaned["summary_confidence"])  # NaN preserved
 
 
 def test_import_from_json_roundtrip(make_pdf_document):

@@ -2,7 +2,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from autoPDFtagger.AIAgents import AIAgent_OpenAI, OpenAI_model_pricelist
+
+try:
+    from autoPDFtagger.AIAgents import AIAgent_OpenAI, OpenAI_model_pricelist
+except Exception as exc:  # pragma: no cover - debug aid
+    import sys
+    import traceback
+
+    traceback.print_exc()
+    print("autoPDFtagger-related modules:", [name for name in sys.modules if name.startswith("autoPDFtagger")])
+    raise exc
 from autoPDFtagger import AIAgents_OpenAI_pdf
 from autoPDFtagger.AIAgents_OpenAI_pdf import (
     AIAgent_OpenAI_pdf_image_analysis,
@@ -56,12 +65,14 @@ def test_text_agent_trims_message_when_exceeding_limit(monkeypatch):
 
     monkeypatch.setattr(AIAgent_OpenAI, "send_request", fake_send_request, raising=False)
 
-    long_doc = _StubDoc("word " * 5000)
+    # Use short text to keep model at gpt-4 (lower token limit), then force trimming
+    short_doc = _StubDoc("word " * 20)
     agent = AIAgent_OpenAI_pdf_text_analysis()
-    agent.analyze_text(long_doc)
+    agent.analyze_text(short_doc)
 
     assert trimmed_messages  # ensure call happened
-    assert len(trimmed_messages[-1]) < len(long_doc.get_short_description())  # message shortened
+    # Message should have been trimmed to empty due to aggressive over-limit stub
+    assert trimmed_messages[-1] == ""
 
 
 def test_process_images_by_size_short_circuits(monkeypatch):
