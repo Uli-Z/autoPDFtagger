@@ -211,7 +211,7 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
             "7. Rate your confidence for each of the above points on a scale "
             "from 0 (no information, text not readable) over 5 (possibly right, but only "
             "few hints about the content of the whole document) to 10 (very sure). "
-            "You always answer in {LANGUAGE} language. For gathering information, "
+            f"You always answer in {LANGUAGE} language. For gathering information, "
             "you use the given filename, pathname and OCR-analyzed text. "
             "If you are seeing a blank document, your title-confidence is alway 0."
             "You always answer in a specified JSON-Format like in this example:\n"

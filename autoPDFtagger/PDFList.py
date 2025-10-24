@@ -249,7 +249,7 @@ class PDFList:
             # Determine the filename for the target
             target_filename = pdf.new_file_name if hasattr(pdf, 'new_file_name') else pdf.file_name
             target_file_path = os.path.join(target_directory, target_filename)
-            print(pdf.new_file_name)
+            logging.info(f"Saving file to {target_file_path}")
             # Copy the file to the target folder
             pdf.save_to_file(target_file_path)
 

@@ -109,7 +109,7 @@ def main():
 
     if args.export is not None:
         archive.file_list.create_new_filenames()
-        logging.info("Exporting files to {args.export}")
+        logging.info(f"Exporting files to {args.export}")
         archive.file_list.export_to_folder(args.export)
 
     if args.list:
