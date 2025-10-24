@@ -20,6 +20,35 @@ autoPDFtagger is a small CLI that makes plain old folders work like a searchable
   - Configurable to integrate other AI agents.
   - Future enhancements to refine folder organization.
 
+## Cost Optimization
+
+autoPDFtagger is designed to reduce AI costs by extracting as much information as possible without calling an LLM, and by minimizing the amount of data sent when an LLM call is necessary.
+
+- Pre‑AI extraction (no cost):
+  - File name and folder path analysis to detect creation date, title and tags. See `PDFDocument.analyze_file()` and helpers like `extract_date_from_filename()`, `extract_title_from_filename()`, and `extract_tags_from_relative_path()` in `autoPDFtagger/PDFDocument.py`.
+  - Existing PDF metadata is read and reused when present. See `extract_metadata()` in `autoPDFtagger/PDFDocument.py`.
+
+- Targeted analysis (only when requested):
+  - The CLI only performs text/image/tag analysis if you pass `-t`, `-i`, or `-c` respectively. If a model key is left empty under `[AI]`, that analysis is skipped entirely.
+  - You can pre‑filter which documents are analyzed using `--keep-above/--keep-below` to focus on items that need improvement.
+
+- Model selection for cost/quality trade‑off:
+  - Text analysis uses explicit short/long models and a configurable threshold (`[AI] text_model_short`, `text_model_long`, `text_threshold_words`) to route short texts to higher‑quality models and longer texts to lower‑cost models. See `analyze_text()` in `autoPDFtagger/ai_tasks.py`.
+  - Tag analysis can use a lighter model (e.g., `openai/gpt-4o-mini`).
+
+- Minimal image usage for vision:
+  - Non‑scanned PDFs: only the largest images are selected (up to three) across the document, prioritizing content‑rich images. Scanned PDFs: only the largest image per page from the first pages is used. See `_select_images_for_analysis()` and `analyze_images()` in `autoPDFtagger/ai_tasks.py`.
+  - This limits tokens and images sent to the model while still capturing the most informative visual context.
+
+- Skips and safeguards:
+  - If a model is not configured for a task, the task is skipped with a clear log line (no accidental spending). See `ai_tasks.analyze_text/images/tags`.
+  - Cost is tracked from API usage and summed per phase; see logs after each analysis. Or use `--calc-stats` to estimate costs up front.
+
+- Local models (zero cloud cost):
+  - You can route to local Ollama models (e.g., `ollama/llava`) via LiteLLM to avoid cloud costs entirely. See the example config.
+
+Future optimizations (ideas): caching previous results to skip re‑analysis of unchanged documents, chunked text processing for very large PDFs, and optional iterative vision passes that stop as soon as confidence is sufficient.
+
 ## Concept and Context
 
 - Problem: Many documents arrive as scans or mixed‑quality PDFs. Plain OCR often misses context (drawings, photos), and ad‑hoc filenames make long‑term search difficult.
