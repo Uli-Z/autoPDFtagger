@@ -113,11 +113,17 @@ def _ensure_config_defaults():
         config_module = sys.modules[module_name]
 
     config = getattr(config_module, "config")
-    if not config.has_section("OPENAI-API"):
+    if not config.has_section("AI"):
         config.read_dict(
             {
-                "OPENAI-API": {"API-Key": "test"},
                 "DEFAULT": {"language": "English"},
+                "AI": {
+                    "text_model_short": "stub/short",
+                    "text_model_long": "stub/long",
+                    "text_threshold_words": "100",
+                    "image_model": "stub/vision",
+                    "tag_model": "stub/tagger",
+                },
             }
         )
 

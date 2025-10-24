@@ -72,23 +72,15 @@ def test_ai_text_analysis_accumulates_cost(monkeypatch, caplog):
     doc_b = DummyDoc("b.pdf")
     tagger.file_list.pdf_documents = {"a": doc_a, "b": doc_b}
 
-    class DummyAgent:
-        call_index = 0
-        call_costs = [0.5, 1.0]
+    call_index = {"i": 0}
 
-        def __init__(self):
-            index = self.__class__.call_index
-            self.__class__.call_index += 1
-            self.cost = self.call_costs[index]
+    def fake_analyze_text(doc, ms, ml, thr):
+        # simulate two calls with different costs
+        idx = call_index["i"]
+        call_index["i"] = idx + 1
+        return "{}", {"cost": 0.5 if idx == 0 else 1.0}
 
-        def analyze_text(self, document):
-            return "{}"
-
-    DummyAgent.call_index = 0
-    monkeypatch.setattr(
-        "autoPDFtagger.autoPDFtagger.AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_text_analysis",
-        lambda: DummyAgent(),
-    )
+    monkeypatch.setattr("autoPDFtagger.ai_tasks.analyze_text", fake_analyze_text)
 
     caplog.set_level(logging.INFO)
     tagger.ai_text_analysis()
@@ -112,17 +104,10 @@ def test_ai_image_analysis_updates_documents(monkeypatch, caplog):
     doc = DummyDoc()
     tagger.file_list.pdf_documents = {"img": doc}
 
-    class DummyImageAgent:
-        def __init__(self):
-            self.cost = 0.75
+    def fake_analyze_images(doc, model=None):
+        return '{"image": true}', {"cost": 0.75}
 
-        def analyze_images(self, document):
-            return '{"image": true}'
-
-    monkeypatch.setattr(
-        "autoPDFtagger.autoPDFtagger.AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_image_analysis",
-        lambda: DummyImageAgent(),
-    )
+    monkeypatch.setattr("autoPDFtagger.ai_tasks.analyze_images", fake_analyze_images)
 
     caplog.set_level(logging.INFO)
     tagger.ai_image_analysis()
@@ -145,17 +130,10 @@ def test_ai_text_analysis_handles_errors(monkeypatch, caplog):
     doc = DummyDoc()
     tagger.file_list.pdf_documents = {"doc": doc}
 
-    class FailingAgent:
-        def __init__(self):
-            self.cost = 0
+    def failing_analyze_text(doc, *a, **k):
+        raise RuntimeError("boom")
 
-        def analyze_text(self, document):
-            raise RuntimeError("boom")
-
-    monkeypatch.setattr(
-        "autoPDFtagger.autoPDFtagger.AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_text_analysis",
-        lambda: FailingAgent(),
-    )
+    monkeypatch.setattr("autoPDFtagger.ai_tasks.analyze_text", failing_analyze_text)
 
     caplog.set_level(logging.ERROR)
     tagger.ai_text_analysis()
@@ -175,18 +153,10 @@ def test_ai_tag_analysis_applies_replacements(monkeypatch):
 
     monkeypatch.setattr(tagger.file_list, "apply_tag_replacements_to_all", fake_apply)
 
-    class DummyAgent:
-        def __init__(self):
-            self.cost = 2.0
+    def fake_analyze_tags(tags, model=""):
+        return [{"original": "alpha", "replacement": "a"}], {"cost": 2.0}
 
-        def send_request(self, tags):
-            self.tags = tags
-            return [{"original": "alpha", "replacement": "a"}]
-
-    monkeypatch.setattr(
-        "autoPDFtagger.autoPDFtagger.AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_tag_analysis",
-        lambda: DummyAgent(),
-    )
+    monkeypatch.setattr("autoPDFtagger.ai_tasks.analyze_tags", fake_analyze_tags)
 
     tagger.ai_tag_analysis()
 

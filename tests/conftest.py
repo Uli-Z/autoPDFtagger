@@ -38,8 +38,14 @@ from autoPDFtagger.config import config as _config  # noqa: E402
 _config.clear()
 _config.read_dict(
     {
-        "OPENAI-API": {"API-Key": "test-key"},
         "DEFAULT": {"language": "English"},
+        "AI": {
+            "text_model_short": "stub/short",
+            "text_model_long": "stub/long",
+            "text_threshold_words": "100",
+            "image_model": "stub/vision",
+            "tag_model": "stub/tagger",
+        },
     }
 )
 
@@ -52,48 +58,18 @@ def configure_config():
     config.clear()
     config.read_dict(
         {
-            "OPENAI-API": {"API-Key": "test-key"},
             "DEFAULT": {"language": "English"},
+            "AI": {
+                "text_model_short": "stub/short",
+                "text_model_long": "stub/long",
+                "text_threshold_words": "100",
+                "image_model": "stub/vision",
+                "tag_model": "stub/tagger",
+            },
         }
     )
     yield
     config.clear()
-
-
-@pytest.fixture(autouse=True)
-def stub_openai_client(monkeypatch):
-    """Replace the OpenAI client with a lightweight stub."""
-    from autoPDFtagger import AIAgents
-
-    class _StubCompletions:
-        def __init__(self):
-            self.calls = []
-
-        def create(self, **kwargs):
-            self.calls.append(kwargs)
-            message = SimpleNamespace(content="{}")
-            usage = SimpleNamespace(prompt_tokens=kwargs.get("prompt_tokens", 0), completion_tokens=kwargs.get("completion_tokens", 0))
-            return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)
-
-    class _StubClient:
-        def __init__(self, *_, **__):
-            self.chat = SimpleNamespace(completions=_StubCompletions())
-
-    monkeypatch.setattr(AIAgents, "OpenAI", _StubClient)
-    yield
-
-
-@pytest.fixture(autouse=True)
-def stub_token_counter(monkeypatch):
-    """Use a deterministic token counter to keep tests fast."""
-    from autoPDFtagger import AIAgents_OpenAI_pdf
-
-    monkeypatch.setattr(
-        AIAgents_OpenAI_pdf,
-        "num_tokens_from_string",
-        lambda text, encoding_name="cl100k_base": len(text),
-    )
-    yield
 
 
 @pytest.fixture

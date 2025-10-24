@@ -83,7 +83,7 @@ class TrackingArchive:
 def test_cli_requires_output_option(tmp_path, monkeypatch, caplog):
     config_path = tmp_path / "config.ini"
     config_path.write_text(
-        "[OPENAI-API]\nAPI-Key=test\n[DEFAULT]\nlanguage=English\n",
+        "[DEFAULT]\nlanguage=English\n[AI]\ntext_model_short=stub/short\ntext_model_long=stub/long\ntext_threshold_words=100\nimage_model=stub/vision\ntag_model=stub/tagger\n",
         encoding="utf-8",
     )
 
@@ -155,7 +155,7 @@ def test_cli_executes_requested_actions(tmp_path, monkeypatch, caplog):
     TrackingArchive.instances.clear()
     config_path = tmp_path / "config.ini"
     config_path.write_text(
-        "[OPENAI-API]\nAPI-Key=test\n[DEFAULT]\nlanguage=English\n",
+        "[DEFAULT]\nlanguage=English\n[AI]\ntext_model_short=stub/short\ntext_model_long=stub/long\ntext_threshold_words=100\nimage_model=stub/vision\ntag_model=stub/tagger\n",
         encoding="utf-8",
     )
     json_path = tmp_path / "out.json"
@@ -215,7 +215,7 @@ def test_cli_prints_json_to_stdout(tmp_path, monkeypatch, capsys):
     TrackingArchive.instances.clear()
     config_path = tmp_path / "config.ini"
     config_path.write_text(
-        "[OPENAI-API]\nAPI-Key=test\n[DEFAULT]\nlanguage=English\n",
+        "[DEFAULT]\nlanguage=English\n[AI]\ntext_model_short=stub/short\ntext_model_long=stub/long\ntext_threshold_words=100\nimage_model=stub/vision\ntag_model=stub/tagger\n",
         encoding="utf-8",
     )
 
@@ -247,7 +247,7 @@ def test_cli_prints_stats(tmp_path, monkeypatch, capsys):
     TrackingArchive.instances.clear()
     config_path = tmp_path / "config.ini"
     config_path.write_text(
-        "[OPENAI-API]\nAPI-Key=test\n[DEFAULT]\nlanguage=English\n",
+        "[DEFAULT]\nlanguage=English\n[AI]\ntext_model_short=stub/short\ntext_model_long=stub/long\ntext_threshold_words=100\nimage_model=stub/vision\ntag_model=stub/tagger\n",
         encoding="utf-8",
     )
     json_path = tmp_path / "out.json"

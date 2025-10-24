@@ -6,10 +6,11 @@ autoPDFtagger is a small CLI that makes plain old folders work like a searchable
 
 ## Key Concepts
 
-- **AI-Powered Tagging**: Leverages GPT-4 and GPT-Vision for fully automated tagging of PDFs, including intricate drawings and low-quality scans.
+- **AI-Powered Tagging**: Uses LLMs to automatically enrich PDFs (text + images), including complex drawings and low-quality scans.
+- **Multi‑provider + Local LLMs**: Works with OpenAI out of the box and, via LiteLLM, also supports Gemini and local models through Ollama.
 - **Focus**: Engineered for paperless home-office setups, prioritizing precise data analysis over complex UI.
 - **No DMS/Vendor Lock‑in**: Works directly on the filesystem with plain files and standard PDF metadata; AI improves indexing and naming so files are discoverable via any file browser/OS search and remain compatible with any DMS.
-- **Requirements**: Python environment and an OpenAI API key.
+- **Requirements**: Python environment and either a provider API key (e.g., OpenAI) or a local Ollama setup.
 - **Functionalities**:
   - Robust text analysis powered by GPT.
   - Advanced image analysis utilizing GPT-Vision.
@@ -43,8 +44,8 @@ If you find this tool helpful and have ideas to improve it, feel free to contrib
 
 ## Requirements to run this program
 - Python
-- An **OpenAI-API-Key with access to gpt-4-vision-preview model**
-- Calculate Costs about 0.03 $ per image-processed PDF-Page
+- For cloud models: a provider API key (e.g., `OPENAI_API_KEY`)
+- For local models: a running Ollama with the chosen model pulled (e.g., `ollama pull llava`)
 
 ## Installation
  ```shell
@@ -56,10 +57,20 @@ Create configuration file and save it to *~/.autoPDFtagger.conf*:
 ; Configuration for autoPDFtagger
 
 [DEFAULT]
-language = {YOUR LANGUAGE}
+language = English
+
+[AI]
+; Choose explicit models per task (via LiteLLM routing)
+text_model_short = openai/gpt-4o
+text_model_long = openai/gpt-4o-mini
+text_threshold_words = 100
+image_model = openai/gpt-4o   ; or gemini/gemini-1.5-pro or ollama/llava
+tag_model = openai/gpt-4o-mini
+image_temperature = 0.8
 
 [OPENAI-API]
-API-Key = {INSERT YOUR API-KEY}
+; Optional fallback if OPENAI_API_KEY is not set
+; API-Key = sk-...
 ```
 
 ## Program Structure
@@ -172,14 +183,14 @@ $ autoPDFtagger pdf_archive -ftic -e new_archive
 
 ## Code Structure
 
-- `main.py`: The terminal interface for the application.
-- `autoPDFtagger.py`: Manages the core functionalities of the tool.
-- `AIAgents.py`: Base classes for AI agent management, including OpenAI API communication.
-- `AIAgents_OPENAI_pdf.py`: Specific AI agents dedicated to text, image, and tag analysis.
-- `PDFDocument.py`: Handles individual PDF documents, managing metadata reading and writing.
-- `PDFList.py`: Oversees a database of PDF documents, their metadata, and provides export functions.
-- `config.py`: Manages configuration files.
-- `autoPDFtagger_example_config.conf`: An example configuration file outlining API key setup and other settings.
+- `main.py`: CLI entry point.
+- `autoPDFtagger.py`: Orchestrates analyses across the file list.
+- `ai_tasks.py`: High-level task functions (text/images/tags) with prompts and JSON handling.
+- `llm_client.py`: Thin LiteLLM wrapper for chat/vision and usage-based cost calculation.
+- `PDFDocument.py`: PDF operations + metadata handling.
+- `PDFList.py`: Collection/database for documents with JSON/CSV import/export.
+- `config.py`: Configuration loader.
+- `autoPDFtagger_example_config.conf`: Example config with `[AI]` options and optional key fallback.
 
 
 

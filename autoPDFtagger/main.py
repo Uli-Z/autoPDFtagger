@@ -30,13 +30,9 @@ def main():
     # Map debug-Level to logging-level
     debug_levels = {0: logging.CRITICAL, 1: logging.INFO, 2: logging.DEBUG}
 
-    try:
-        if not config.read(args.config_file):
-            raise FileNotFoundError(f"Config file not found: '{args.config_file}'")
-
-        config['OPENAI-API'].get('API-Key')
-    except Exception as e:
-        raise e
+    # Load configuration (required to exist); API keys are loaded from environment
+    if not config.read(args.config_file):
+        raise FileNotFoundError(f"Config file not found: '{args.config_file}'")
 
     # After loading configuration:
     from autoPDFtagger.autoPDFtagger import autoPDFtagger

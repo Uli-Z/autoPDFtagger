@@ -1,9 +1,9 @@
 import os
 import logging
+import traceback
 from autoPDFtagger.config import config
 from autoPDFtagger.PDFList import PDFList
-from autoPDFtagger import AIAgents_OpenAI_pdf
-import traceback
+from autoPDFtagger import ai_tasks
 
 class autoPDFtagger:
     def __init__(self):
@@ -28,18 +28,21 @@ class autoPDFtagger:
 
     def ai_text_analysis(self):
         logging.info("Asking AI to analyze PDF-Text")
-        cost = 0 # for monitoring
+        cost = 0.0  # for monitoring
+
+        # Read AI config for text analysis
+        ms = config.get('AI', 'text_model_short', fallback='')
+        ml = config.get('AI', 'text_model_long', fallback='')
+        thr = int(config.get('AI', 'text_threshold_words', fallback='100'))
 
         for document in self.file_list.pdf_documents.values():
-            
-            ai = AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_text_analysis()
-            ai.log_file = "api.log"
-            logging.info("... " + document.file_name) 
+            logging.info("... " + document.file_name)
             try:
-                response = ai.analyze_text(document)
-                document.set_from_json(response)
-                cost += ai.cost
-            except Exception as e: 
+                response, usage = ai_tasks.analyze_text(document, ms, ml, thr)
+                if response:
+                    document.set_from_json(response)
+                cost += float(usage.get('cost', 0.0) or 0.0)
+            except Exception as e:
                 logging.error(document.file_name)
                 logging.error(f"Text analysis failed. Error message: {e}")
                 logging.error(traceback.format_exc())
@@ -48,14 +51,14 @@ class autoPDFtagger:
 
     def ai_image_analysis(self):
         logging.info("Asking AI to analyze Images")
-        
-        costs = 0
-        for document in self.file_list.pdf_documents.values(): 
-            ai = AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_image_analysis()
+        costs = 0.0
+        model = config.get('AI', 'image_model', fallback='')
+        for document in self.file_list.pdf_documents.values():
             logging.info("... " + document.file_name)
-            response = ai.analyze_images(document)
-            document.set_from_json(response)
-            costs += ai.cost
+            response, usage = ai_tasks.analyze_images(document, model)
+            if response:
+                document.set_from_json(response)
+            costs += float(usage.get('cost', 0.0) or 0.0)
         logging.info("Spent " + str(costs) + " $ for image analysis")
 
     # Simplify and unify tags over all documents in the database
@@ -63,15 +66,14 @@ class autoPDFtagger:
         logging.info("Asking AI to optimize tags")
         unique_tags = self.file_list.get_unique_tags()
         logging.info("Unique tags: " + str(unique_tags))
-
-        ai = AIAgents_OpenAI_pdf.AIAgent_OpenAI_pdf_tag_analysis()
-        replacements = ai.send_request(unique_tags)
+        model = config.get('AI', 'tag_model', fallback='')
+        replacements, usage = ai_tasks.analyze_tags(unique_tags, model=model)
 
         logging.info("Applying replacements")
         self.file_list.apply_tag_replacements_to_all(replacements)
         unique_tags = self.file_list.get_unique_tags()
         logging.info("New list of tags: " + str(unique_tags))
-        logging.info("Spent " + str(ai.cost) + " $ for tag analysis")
+        logging.info("Spent " + str(usage.get('cost', 0.0)) + " $ for tag analysis")
        
     # Remove all documents from the database which until now could not be filled
     # with enough valuable information
