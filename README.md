@@ -2,12 +2,15 @@
 
 ## Overview
 
-autoPDFtagger is a Python tool designed for efficient home-office organization, focusing on digitizing and organizing both digital and paper-based documents. By automating the tagging of PDF files, including image-rich documents and scans of varying quality, it aims to streamline the organization of digital archives.
+autoPDFtagger is not a document management system. Its core philosophy is longevity: important documents should live in a simple, timeless folder structure with clear, human‑readable filenames — independent of any particular program or platform. Backups must remain straightforward and understandable, so the project deliberately builds on plain files and standard PDF metadata instead of proprietary archives.
+
+Old‑school, AI‑assisted: autoPDFtagger enhances classic file management by creating a searchable index for scanned PDFs (OCR/AI‑supported) and by proposing consistent, meaningful filenames. With good indexing and naming, files are discoverable in any file browser or OS search — no DMS required. And because it works directly with your filesystem and common metadata, it is compatible with any DMS you may choose to use.
 
 ## Key Concepts
 
 - **AI-Powered Tagging**: Leverages GPT-4 and GPT-Vision for fully automated tagging of PDFs, including intricate drawings and low-quality scans.
 - **Focus**: Engineered for paperless home-office setups, prioritizing precise data analysis over complex UI.
+- **No DMS/Vendor Lock‑in**: Works directly on the filesystem with plain files and standard PDF metadata; AI improves indexing and naming so files are discoverable via any file browser/OS search and remain compatible with any DMS.
 - **Requirements**: Python environment and an OpenAI API key.
 - **Functionalities**:
   - Robust text analysis powered by GPT.
@@ -192,4 +195,3 @@ $ autoPDFtagger pdf_archive -ftic -e new_archive
 ## License
 
 GPL-3
-
