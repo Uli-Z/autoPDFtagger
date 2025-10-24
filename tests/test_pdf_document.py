@@ -236,7 +236,7 @@ def test_extract_metadata_parses_confidence(monkeypatch, make_pdf_document):
     assert doc.creator_confidence == 7
     assert doc.tags == ["finance", "report"]
     assert doc.tags_confidence == [3.0, 4.0]
-    assert doc.creation_date.isoformat().startswith("2024-01-02T11:14:15")
+    assert doc.creation_date.isoformat() == "2024-01-02T11:14:15+00:00"
 
 
 def test_analyze_document_images_computes_metrics(monkeypatch, make_pdf_document):

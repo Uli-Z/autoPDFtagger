@@ -531,8 +531,11 @@ class PDFDocument:
                 date_obj = pdf_date_to_datetime(creation_date)
 
         if date_obj:
-            if isinstance(date_obj, datetime) and date_obj.tzinfo:
-                date_obj = date_obj.astimezone(pytz.utc).replace(tzinfo=None)
+            if isinstance(date_obj, datetime):
+                if date_obj.tzinfo is None:
+                    date_obj = pytz.UTC.localize(date_obj)
+                else:
+                    date_obj = date_obj.astimezone(pytz.UTC)
             if confidence >= self.creation_date_confidence:
                 self.creation_date = date_obj
                 self.creation_date_confidence = confidence
