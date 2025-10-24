@@ -23,6 +23,27 @@ def test_add_file_uses_directory_when_base_dir_missing(tmp_path, monkeypatch):
     assert captured["args"] == (str(pdf_path), str(tmp_path))
 
 
+def test_add_file_relative_path_uses_cwd_when_no_base_dir(tmp_path, monkeypatch):
+    # Create a file in the temp cwd and switch into it
+    pdf_name = "rel.pdf"
+    (tmp_path / pdf_name).write_bytes(b"%PDF-1.4\n%EOF\n")
+
+    tagger = autoPDFtagger()
+    called = {}
+
+    def fake_add(folder_or_file, base_dir):
+        called["args"] = (folder_or_file, base_dir)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(tagger.file_list, "add_pdf_documents_from_folder", fake_add)
+
+    # Call with relative file name; base_dir should resolve to CWD
+    tagger.add_file(pdf_name, base_dir=None)
+
+    assert called["args"][0] == pdf_name
+    assert called["args"][1] == str(tmp_path)
+
+
 def test_keep_incomplete_documents_filters(monkeypatch):
     tagger = autoPDFtagger()
     good = SimpleNamespace(

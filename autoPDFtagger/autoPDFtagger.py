@@ -16,7 +16,11 @@ class autoPDFtagger:
             logging.error(f"Basedir {base_dir} does not exist")
             base_dir = None
         if not base_dir:
-            base_dir = os.path.dirname(path)
+            # Derive base directory from the provided path.
+            # If the path has no directory component (e.g., "file.pdf"),
+            # use the current working directory to avoid empty base paths.
+            derived = os.path.dirname(path)
+            base_dir = derived if derived else os.getcwd()
         
         # Read folder oder PDF-file
         self.file_list.add_pdf_documents_from_folder(path, base_dir)
