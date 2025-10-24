@@ -140,6 +140,9 @@ class autoPDFtagger:
             confidence = round(pdf.get_confidence_index())
             confidence_counts[confidence] = confidence_counts.get(confidence, 0) + 1
 
+        if not confidence_counts:
+            return "\n(no documents)\n"
+
         # Step 2: Determine the scale factor for histogram
         max_count = max(confidence_counts.values())
         max_resolution = 1

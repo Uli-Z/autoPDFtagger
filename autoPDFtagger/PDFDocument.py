@@ -307,7 +307,9 @@ class PDFDocument:
 
         # Remove additional characters and use the rest as the title
         file_name = re.sub(r'[^\w\s.-]', '', file_name)
-        file_name = re.sub(r'^-|\.pdf$', '', file_name)
+        file_name = re.sub(r'^-', '', file_name)
+        file_name = re.sub(r'\.pdf$', '', file_name, flags=re.IGNORECASE)
+        file_name = file_name.strip()
 
         # Set the extracted file name as the title
         self.set_title(file_name, 2)
@@ -758,17 +760,59 @@ def pdf_date_to_datetime(pdf_date):
     Converts a PDF date format to a Python datetime object.
     Example of a PDF date: "D:20150919085148Z00'00'"
     """
-    # Remove the leading 'D:' and any apostrophes
-    date_str = re.sub(r'D:|\'+', '', pdf_date)
+    if not pdf_date:
+        return None
 
-    # Try to parse the date in the PDF format
-    try:
-        # Assume the date is in UTC if no timezone is specified
-        if 'Z' in date_str:
-            date_str = date_str.replace('Z', '+0000')
-            return datetime.strptime(date_str, "%Y%m%d%H%M%S%z")
+    # Normalize format: strip prefix and apostrophes
+    date_str = pdf_date.strip()
+    if date_str.startswith("D:"):
+        date_str = date_str[2:]
+    date_str = date_str.replace("'", "")
+
+    if not date_str:
+        return None
+
+    # Split core datetime digits and optional timezone suffix
+    idx = 0
+    while idx < len(date_str) and date_str[idx].isdigit():
+        idx += 1
+
+    dt_digits = date_str[:idx]
+    tz_suffix = date_str[idx:] if idx < len(date_str) else ""
+
+    length_to_format = {
+        4: "%Y",
+        6: "%Y%m",
+        8: "%Y%m%d",
+        10: "%Y%m%d%H",
+        12: "%Y%m%d%H%M",
+        14: "%Y%m%d%H%M%S",
+    }
+
+    dt_format = length_to_format.get(len(dt_digits))
+    if not dt_format:
+        logging.warning("Unsupported PDF date length for '%s'", pdf_date)
+        return None
+
+    tz_str = ""
+    if tz_suffix:
+        if tz_suffix[0] in ("Z", "z"):
+            tz_str = "+0000"
         else:
-            return datetime.strptime(date_str, "%Y%m%d%H%M%S")
+            # Accept +HH or +HHMM forms
+            if re.fullmatch(r"[+-]\d{2}", tz_suffix):
+                tz_str = tz_suffix + "00"
+            elif re.fullmatch(r"[+-]\d{4}", tz_suffix):
+                tz_str = tz_suffix
+            else:
+                logging.warning("Unsupported PDF timezone format in '%s'", pdf_date)
+                return None
+
+    try:
+        if tz_str:
+            return datetime.strptime(dt_digits + tz_str, dt_format + "%z")
+        else:
+            return datetime.strptime(dt_digits, dt_format)
     except ValueError:
-        print(f"Error parsing date: {pdf_date}")
+        logging.warning("Error parsing PDF date '%s'", pdf_date)
         return None
