@@ -15,8 +15,8 @@ Old‑school, AI‑assisted: autoPDFtagger enhances classic file management by c
 - **Functionalities**:
   - Robust text analysis powered by GPT.
   - Advanced image analysis utilizing GPT-Vision.
-  - Utilizes existing metadata, file names, and folder structures.
-  - Compiles information into a JSON database for easy access.
+  - Operates on the filesystem using existing folder structures, filenames, and standard PDF metadata (no proprietary archive).
+  - Exports JSON for piping/integration and writes standard PDF metadata; no proprietary database.
   - Standardizes file naming (YY-mm-dd-{TITLE}.pdf) and updates PDF metadata for efficient indexing.
   - Configurable to integrate other AI agents.
   - Future enhancements to refine folder organization.
