@@ -261,20 +261,25 @@ class AIAgent_OpenAI_pdf_text_analysis(AIAgent_OpenAI):
         # the specific token-limit of the actual model
 
         # Optimize request data
-        # Convert message-list to str
-        request_test_str = pprint.pformat(self.messages)
-        # estimate token-number for request
-        num_tokens = num_tokens_from_string(request_test_str)
-        # estimate 500 Tokens for answer
-        tokens_required = num_tokens + 500
-        
-        # max tokens of the actual model stored in price list table
-        diff_to_max =  tokens_required - OpenAI_model_pricelist[self.model][2]
-        if diff_to_max > 0: # message too long 
-            # we need to shorten it
-            # estimating 3 characters per Token
-            message = message[:-(diff_to_max*3)] 
-            logging.info("PDF-Text needs to be shortened due to token_limit by " + str(diff_to_max*3) + " characters.")
+        request_messages = self.messages + [{"role": "user", "content": message}]
+        limit = OpenAI_model_pricelist[self.model][2]
+
+        while True:
+            request_test_str = pprint.pformat(request_messages)
+            num_tokens = num_tokens_from_string(request_test_str)
+            tokens_required = num_tokens + 500  # reserve tokens for the response
+            diff_to_max = tokens_required - limit
+
+            if diff_to_max <= 0 or not message:
+                break
+
+            trim_chars = min(diff_to_max * 3, len(message))
+            message = message[:-trim_chars]
+            request_messages[-1]["content"] = message
+            logging.info("PDF-Text needs to be shortened due to token_limit by %s characters.", trim_chars)
+
+        if not message:
+            logging.warning("OCR content trimmed to empty message due to token limits.")
 
         self.add_message(message, role="user")
     

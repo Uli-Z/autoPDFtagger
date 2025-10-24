@@ -202,7 +202,8 @@ class PDFDocument:
 
             # Clean text by removing unwanted characters and line breaks
             pdf_text = pdf_text.replace('\n', ' ').replace('\r', ' ')
-            pdf_text = re.sub(r'[^a-zA-Z0-9 .:äöüÄÖÜß/]+', '', pdf_text)
+            pdf_text = re.sub(r'[^\w\s.,:;/+\-]', '', pdf_text, flags=re.UNICODE)
+            pdf_text = re.sub(r'\s+', ' ', pdf_text, flags=re.UNICODE).strip()
 
             pdf_document.close()
             #logging.debug(f"Extracted text from {self.file_name}:\n{self.pdf_text}\n----------------\n")
@@ -346,12 +347,13 @@ class PDFDocument:
 
 
             # Extract confidence values
-            keywords = metadata.get('keywords', '')
-            title_conf = extract_confidence(r"title_confidence=(\d+\.?\d*)", keywords, default_confidence)
-            summary_conf = extract_confidence(r"summary_confidence=(\d+\.?\d*)", keywords, default_confidence)
-            creation_date_conf = extract_confidence(r"creation_date_confidence=(\d+\.?\d*)", keywords, default_confidence)
-            creator_conf = extract_confidence(r"creator_confidence=(\d+\.?\d*)", keywords, default_confidence)
-            tags_conf_str = extract_confidence(r"tag_confidence=([\d,.]+)", keywords, '')
+            keywords_raw = metadata.get('keywords', '')
+            title_conf = extract_confidence(r"title_confidence=(\d+\.?\d*)", keywords_raw, default_confidence)
+            summary_conf = extract_confidence(r"summary_confidence=(\d+\.?\d*)", keywords_raw, default_confidence)
+            creation_date_conf = extract_confidence(r"creation_date_confidence=(\d+\.?\d*)", keywords_raw, default_confidence)
+            creator_conf = extract_confidence(r"creator_confidence=(\d+\.?\d*)", keywords_raw, default_confidence)
+            tags_conf_match = re.search(r"tag_confidence=([\d,.]+)", keywords_raw)
+            tags_conf_str = tags_conf_match.group(1) if tags_conf_match else None
 
             # Set metadata values if not empty
             if metadata.get('title'):
@@ -364,9 +366,24 @@ class PDFDocument:
                 self.set_creator(metadata['author'], creator_conf)
 
             # Process tag confidence values
-            tag_confidences = [float(conf) for conf in tags_conf_str.split(',')] if tags_conf_str else [default_confidence]
-            keywords = metadata.get('keywords', '').split(', ')[:len(tag_confidences)]
-            self.set_tags(keywords, tag_confidences)
+            tag_section, _, _ = keywords_raw.partition(' - Metadata automatically updated')
+            tag_candidates = [tag.strip() for tag in tag_section.split(',') if tag.strip()]
+
+            if tag_candidates:
+                if tags_conf_str:
+                    tag_confidences = [float(conf) for conf in tags_conf_str.split(',') if conf]
+                else:
+                    tag_confidences = []
+
+                if len(tag_confidences) < len(tag_candidates):
+                    tag_confidences.extend([default_confidence] * (len(tag_candidates) - len(tag_confidences)))
+                elif len(tag_confidences) > len(tag_candidates):
+                    tag_confidences = tag_confidences[:len(tag_candidates)]
+
+                if not tag_confidences:
+                    tag_confidences = [default_confidence] * len(tag_candidates)
+
+                self.set_tags(tag_candidates, tag_confidences)
 
             pdf_document.close()
 
@@ -462,6 +479,7 @@ class PDFDocument:
             img_area = rect.width * rect.height
 
         pix = fitz.Pixmap(page.parent, xref)
+        page_area = page.rect.width * page.rect.height
         return {
             "xref": xref,
             "width": rect.width if rect else 0,
@@ -469,7 +487,7 @@ class PDFDocument:
             "original_width": pix.width,
             "original_height": pix.height,
             "area": img_area,
-            "page_coverage_percent": (img_area / page.rect.width * page.rect.height) * 100 if rect else 0
+            "page_coverage_percent": (img_area / page_area) * 100 if rect and page_area else 0
         }
    
 
@@ -494,15 +512,25 @@ class PDFDocument:
             return
         
         date_obj = None
-        for regex, date_format in date_formats.items():
-            if re.match(regex, creation_date):
-                try:
-                    date_obj = datetime.strptime(creation_date, date_format)
-                    break
-                except ValueError:
-                    continue  # Try the next format if the current one does not match
+
+        if isinstance(creation_date, datetime):
+            date_obj = creation_date
+        elif isinstance(creation_date, str):
+            creation_date = creation_date.strip()
+            for regex, date_format in date_formats.items():
+                if re.match(regex, creation_date):
+                    try:
+                        date_obj = datetime.strptime(creation_date, date_format)
+                        break
+                    except ValueError:
+                        continue  # Try the next format if the current one does not match
+
+            if date_obj is None and creation_date.startswith("D:"):
+                date_obj = pdf_date_to_datetime(creation_date)
 
         if date_obj:
+            if isinstance(date_obj, datetime) and date_obj.tzinfo:
+                date_obj = date_obj.astimezone(pytz.utc).replace(tzinfo=None)
             if confidence >= self.creation_date_confidence:
                 self.creation_date = date_obj
                 self.creation_date_confidence = confidence
@@ -544,15 +572,30 @@ class PDFDocument:
     def set_tags(self, tag_list, confidence_list):
         """
         Sets tags for the document with corresponding confidence levels.
-        Validates the length of the tag and confidence lists and updates the tags only if the 
-        confidence level is high enough.
+        Duplicates are merged by taking the highest confidence.
         """
         if len(tag_list) != len(confidence_list):
             raise ValueError("Length of tag_list and confidence_list must be equal.")
 
+        # Start with existing tag state to preserve earlier entries
+        tag_conf_map = {}
+        for index, existing_tag in enumerate(self.tags):
+            if not existing_tag:
+                continue
+            existing_conf = self.tags_confidence[index] if index < len(self.tags_confidence) else 0
+            current_conf = tag_conf_map.get(existing_tag, existing_conf)
+            tag_conf_map[existing_tag] = max(current_conf, existing_conf)
+
+        # Merge incoming tags, keeping best confidence per tag
         for tag, confidence in zip(tag_list, confidence_list):
-            self.tags.append(tag)
-            self.tags_confidence.append(confidence)
+            if not tag:
+                continue
+            existing_conf = tag_conf_map.get(tag)
+            if existing_conf is None or confidence >= existing_conf:
+                tag_conf_map[tag] = confidence if existing_conf is None else max(existing_conf, confidence)
+
+        self.tags = list(tag_conf_map.keys())
+        self.tags_confidence = [tag_conf_map[tag] for tag in self.tags]
 
     def set_from_json(self, input_json):
         """

@@ -42,7 +42,7 @@ class autoPDFtagger:
             except Exception as e: 
                 logging.error(document.file_name)
                 logging.error(f"Text analysis failed. Error message: {e}")
-                logging.error(traceback.format_exception())
+                logging.error(traceback.format_exc())
         logging.info(f"Spent {cost:.4f} $ for text analysis")
 
 
@@ -103,7 +103,11 @@ class autoPDFtagger:
         total_documents = len(self.file_list.pdf_documents)
         total_pages = sum([len(doc.pages) for doc in self.file_list.pdf_documents.values()])
         total_images = sum([doc.get_image_number() for doc in self.file_list.pdf_documents.values()])
-        total_text_tokens = sum([len(doc.get_pdf_text().split()) // 3 for doc in self.file_list.pdf_documents.values()])
+        def count_tokens_from_text(doc):
+            text = doc.get_pdf_text() or ""
+            return len(text.split()) // 3
+
+        total_text_tokens = sum(count_tokens_from_text(doc) for doc in self.file_list.pdf_documents.values())
 
         # A very rough estimate for expected costs to do analysis over the actual data
         estimated_text_analysis_cost_lower = ((total_text_tokens + total_documents * 1000) / 1000) * 0.001
