@@ -2,9 +2,7 @@
 
 ## Overview
 
-autoPDFtagger is not a document management system. Its core philosophy is longevity: important documents should live in a simple, timeless folder structure with clear, human‑readable filenames — independent of any particular program or platform. Backups must remain straightforward and understandable, so the project deliberately builds on plain files and standard PDF metadata instead of proprietary archives.
-
-Old‑school, AI‑assisted: autoPDFtagger enhances classic file management by creating a searchable index for scanned PDFs (OCR/AI‑supported) and by proposing consistent, meaningful filenames. With good indexing and naming, files are discoverable in any file browser or OS search — no DMS required. And because it works directly with your filesystem and common metadata, it is compatible with any DMS you may choose to use.
+autoPDFtagger is a small CLI that makes plain old folders work like a searchable archive. It is not a document management system. The tool uses AI to extract and index text from scanned PDFs and to propose clean, consistent filenames and standard PDF metadata. With good indexing and naming, you can find files via any file browser or OS search — no proprietary database, no lock‑in. Because it writes standard PDF metadata and exports JSON, it stays compatible with any DMS you already use or may adopt later. Ideal for personal archives and small offices that want longevity and minimal maintenance.
 
 ## Key Concepts
 
@@ -23,7 +21,11 @@ Old‑school, AI‑assisted: autoPDFtagger enhances classic file management by c
 
 ## Concept and Context
 
-In the advancing digital age, many documents are now delivered digitally, yet significant documents often still arrive in paper form. Looking towards a digital future, the consolidation of these documents into a unified digital archive becomes increasingly valuable. Simple scanning using smartphone cameras has made this practical. However, the reliability of existing OCR technologies and their limited ability to effectively index non-textual content like drawings or photos hampers the searchability of these documents. autoPDFtagger aims to bridge this gap by offering AI-assisted analysis and organization of PDF files, enhancing their searchability and organization with a level of precision comparable to human effort.
+- Problem: Many documents arrive as scans or mixed‑quality PDFs. Plain OCR often misses context (drawings, photos), and ad‑hoc filenames make long‑term search difficult.
+- Philosophy: Archives must remain usable for decades. That means simple folders, human‑readable filenames, and backups anyone can understand — independent of specific apps or platforms.
+- Approach: "Old‑school, AI‑assisted." autoPDFtagger analyzes text and images (GPT‑based) to build a searchable index and suggest consistent filenames. It writes standard PDF metadata and can output JSON for piping and review.
+- Safety & control: Leaves originals untouched unless you export; uses a confidence logic to only update when results improve quality.
+- Outcome: Faster, more reliable search in your existing filesystem. No DMS required — yet fully compatible with any DMS.
 
 ## Current Status
 At the moment, there exists a functional prototype in the form of a terminal program with a Python module, which demonstrates its functionality and has already achieved impressive results for me. For a broader application, many detailed improvements are certainly necessary, especially in testing, promt-optimization, error handling and documentation.
