@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 import math
@@ -73,3 +74,115 @@ def test_import_from_json_roundtrip(make_pdf_document):
     imported = next(iter(pdf_list.pdf_documents.values()))
     assert imported.title == "Report"
     assert imported.tags == ["dept"]
+
+
+def test_add_pdf_document_updates_existing():
+    pdf_list = PDFList()
+
+    class RecordingDoc:
+        def __init__(self, path, payload):
+            self._path = path
+            self._payload = payload
+            self.updated_with = []
+            self.file_name = os.path.basename(path)
+
+        def get_absolute_path(self):
+            return self._path
+
+        def to_dict(self):
+            return self._payload
+
+        def set_from_dict(self, payload):
+            self.updated_with.append(payload)
+
+    path = "/tmp/doc.pdf"
+    first = RecordingDoc(path, {"value": "initial"})
+    pdf_list.add_pdf_document(first)
+
+    replacement = RecordingDoc(path, {"value": "replacement"})
+    pdf_list.add_pdf_document(replacement)
+
+    assert pdf_list.pdf_documents[path] is first
+    assert first.updated_with == [{"value": "replacement"}]
+
+
+def test_add_file_dispatches_by_extension(monkeypatch, tmp_path):
+    pdf_list = PDFList()
+    calls = []
+
+    class DummyPDFDocument:
+        def __init__(self, path, base_dir):
+            self.path = path
+            self.base_dir = base_dir
+
+    monkeypatch.setattr("autoPDFtagger.PDFList.PDFDocument", DummyPDFDocument)
+    monkeypatch.setattr(pdf_list, "add_pdf_document", lambda doc: calls.append(("pdf", doc)))
+    monkeypatch.setattr(pdf_list, "import_from_json_file", lambda path: calls.append(("json", path)))
+    monkeypatch.setattr(pdf_list, "import_from_csv_file", lambda path: calls.append(("csv", path)))
+
+    pdf_list.add_file(str(tmp_path / "file.pdf"), str(tmp_path))
+    pdf_list.add_file(str(tmp_path / "data.json"), str(tmp_path))
+    pdf_list.add_file(str(tmp_path / "data.csv"), str(tmp_path))
+
+    assert calls[0][0] == "pdf"
+    assert isinstance(calls[0][1], DummyPDFDocument)
+    assert calls[1] == ("json", str(tmp_path / "data.json"))
+    assert calls[2] == ("csv", str(tmp_path / "data.csv"))
+
+
+def test_add_pdf_documents_from_folder_scans(monkeypatch, tmp_path):
+    pdf_list = PDFList()
+    calls = []
+
+    def fake_add_file(path, base_dir):
+        calls.append((path, base_dir))
+
+    monkeypatch.setattr(pdf_list, "add_file", fake_add_file)
+
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.pdf").write_text("pdf")
+    (root / "b.json").write_text("json")
+    (root / "sub").mkdir()
+    (root / "sub" / "c.csv").write_text("csv")
+
+    pdf_list.add_pdf_documents_from_folder(str(root), str(root))
+
+    expected = {
+        (str(root / "a.pdf"), str(root)),
+        (str(root / "b.json"), str(root)),
+        (str(root / "sub" / "c.csv"), str(root)),
+    }
+    assert set(calls) == expected
+
+
+def test_export_to_folder_uses_new_names(tmp_path):
+    pdf_list = PDFList()
+    export_root = tmp_path / "export"
+    saved = []
+
+    class DummyDoc:
+        def __init__(self, relative_path, file_name, new_rel=None, new_name=None):
+            self.relative_path = relative_path
+            self.file_name = file_name
+            self._abs = str(tmp_path / "src" / file_name)
+            if new_rel is not None:
+                self.new_relative_path = new_rel
+            if new_name is not None:
+                self.new_file_name = new_name
+
+        def save_to_file(self, target):
+            saved.append(target)
+
+        def get_absolute_path(self):
+            return self._abs
+
+    primary = DummyDoc(".", "one.pdf", new_rel="custom/dir", new_name="renamed.pdf")
+    secondary = DummyDoc("../archive/year", "two.pdf")
+
+    pdf_list.pdf_documents = {"one": primary, "two": secondary}
+
+    pdf_list.export_to_folder(str(export_root))
+
+    assert str(export_root / "custom/dir/renamed.pdf") in saved
+    assert str(export_root / "archive/year/two.pdf") in saved
