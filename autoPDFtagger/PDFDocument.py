@@ -125,6 +125,9 @@ class PDFDocument:
         tags_confidence_str = ','.join([str(conf) for conf in self.tags_confidence])
         metadata['keywords'] = f"{metadata['keywords']} - Metadata automatically updated by autoPDFtagger, title_confidence={self.title_confidence}, summary_confidence={self.summary_confidence}, creation_date_confidence={self.creation_date_confidence}, creator_confidence={self.creator_confidence}, tag_confidence={tags_confidence_str}"
 
+        if 'summary' in metadata:
+            del metadata['summary']
+
         if self.creation_date:
             # Konvertiere das Datum in das PDF-Format
             # Annahme: Die Zeitzone ist UTC

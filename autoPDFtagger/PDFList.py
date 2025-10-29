@@ -156,8 +156,11 @@ class PDFList:
             else:
                 try:
                     # Convert to appropriate data type
-                    row[key] = data_types[key](value)
-                except ValueError:
+                    if value == 'None':
+                        row[key] = None
+                    else:
+                        row[key] = data_types[key](value)
+                except (ValueError, TypeError):
                     raise ValueError(f"Value conversion error for {key}: {value}")
 
         return row
@@ -172,8 +175,9 @@ class PDFList:
                 # Process each row and create PDFDocument objects
                 for row in reader:
                     try:
-                        logging.debug("Read row")
+                        logging.debug(f"Read row: {row}")
                         row = self.clean_csv_row(row)
+                        logging.debug(f"Cleaned row: {row}")
                         pdf_document = self.create_PDFDocument_from_dict(row)
                         if pdf_document:
                             self.add_pdf_document(pdf_document)
