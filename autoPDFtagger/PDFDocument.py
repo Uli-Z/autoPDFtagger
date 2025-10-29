@@ -117,7 +117,7 @@ class PDFDocument:
         # Update the metadata of the PDF document
         metadata = pdf_document.metadata
         metadata['title'] = self.title
-        metadata['summary'] = self.summary
+        metadata['subject'] = self.summary
         metadata['author'] = self.creator
         metadata['keywords'] = ', '.join(self.tags)
 
@@ -125,8 +125,6 @@ class PDFDocument:
         tags_confidence_str = ','.join([str(conf) for conf in self.tags_confidence])
         metadata['keywords'] = f"{metadata['keywords']} - Metadata automatically updated by autoPDFtagger, title_confidence={self.title_confidence}, summary_confidence={self.summary_confidence}, creation_date_confidence={self.creation_date_confidence}, creator_confidence={self.creator_confidence}, tag_confidence={tags_confidence_str}"
 
-        if 'summary' in metadata:
-            del metadata['summary']
 
         if self.creation_date:
             # Konvertiere das Datum in das PDF-Format
@@ -363,8 +361,8 @@ class PDFDocument:
             # Set metadata values if not empty
             if metadata.get('title'):
                 self.set_title(metadata['title'], title_conf)
-            if metadata.get('summary'):
-                self.set_summary(metadata['summary'], summary_conf)
+            if metadata.get('subject'):
+                self.set_summary(metadata['subject'], summary_conf)
             if metadata.get('creationDate'):
                 self.set_creation_date(metadata['creationDate'], creation_date_conf)
             if metadata.get('author'):
