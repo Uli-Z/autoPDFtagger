@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from autoPDFtagger.PDFDocument import PDFDocument
 from autoPDFtagger.llm_client import run_chat, run_vision
 from autoPDFtagger.config import config
+from autoPDFtagger import mock_provider
 
 
 def _lang() -> str:
@@ -53,6 +54,10 @@ def analyze_text(
     else:
         logging.info("Text analysis skipped (no model configured)")
         return None, {"cost": 0.0}
+
+    if mock_provider.is_mock_model(chosen_model):
+        response, usage = mock_provider.fetch(doc, "text", context={"words": words})
+        return response, usage
 
     logging.info(f"Using model '{chosen_model}' for text ({words} words, threshold={threshold_words})")
 
@@ -135,6 +140,10 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
     if not imgs:
         logging.info("No images selected for analysis; skipping")
         return None, {"cost": 0.0}
+
+    if mock_provider.is_mock_model(model):
+        response, usage = mock_provider.fetch(doc, "image", context={"image_count": len(imgs)})
+        return response, usage
 
     prompt = (
         "You are a helpful assistant analyzing images inside of documents. Based on the shown images, provide:"

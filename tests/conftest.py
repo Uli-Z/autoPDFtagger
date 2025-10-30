@@ -46,6 +46,10 @@ _config.read_dict(
             "image_model": "stub/vision",
             "tag_model": "stub/tagger",
         },
+        "OCR": {
+            "enabled": "auto",
+            "languages": "eng",
+        },
     }
 )
 
@@ -65,6 +69,10 @@ def configure_config():
                 "text_threshold_words": "100",
                 "image_model": "stub/vision",
                 "tag_model": "stub/tagger",
+            },
+            "OCR": {
+                "enabled": "auto",
+                "languages": "eng",
             },
         }
     )
@@ -90,3 +98,16 @@ def make_pdf_document(tmp_path):
         return PDFDocument(str(pdf_path), str(base_dir))
 
     return _builder
+
+
+@pytest.fixture(autouse=True)
+def reset_pdfdocument_ocr():
+    """Ensure OCR runner state is isolated between tests."""
+    from autoPDFtagger.PDFDocument import PDFDocument
+    from autoPDFtagger import mock_provider
+
+    PDFDocument.configure_ocr(None)
+    mock_provider.reset()
+    yield
+    PDFDocument.configure_ocr(None)
+    mock_provider.reset()

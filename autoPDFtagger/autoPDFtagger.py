@@ -3,12 +3,15 @@ import logging
 import traceback
 from autoPDFtagger.config import config
 from autoPDFtagger.PDFList import PDFList
-from autoPDFtagger import ai_tasks
+from autoPDFtagger import ai_tasks, mock_provider
+from autoPDFtagger.PDFDocument import PDFDocument
 
 class autoPDFtagger:
-    def __init__(self):
+    def __init__(self, ocr_runner=None):
         self.ai = None
         self.file_list = PDFList()
+        PDFDocument.configure_ocr(ocr_runner)
+        mock_provider.reset()
 
     # Add file to database
     def add_file(self, path: str, base_dir = None):

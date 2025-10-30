@@ -22,6 +22,9 @@ import base64
 from datetime import datetime
 import pytz
 import traceback
+from typing import Optional
+
+from autoPDFtagger.ocr import TesseractRunner
 
 
 date_formats = {
@@ -42,6 +45,13 @@ class PDFDocument:
     Class for handling operations on PDF documents.
     Includes reading, analyzing, and extracting information from PDF files.
     """
+
+    _ocr_runner: Optional[TesseractRunner] = None
+
+    @classmethod
+    def configure_ocr(cls, runner: Optional[TesseractRunner]):
+        cls._ocr_runner = runner
+
     def __init__(self, path, base_directory):
 
         # Validate and initialize file paths
@@ -74,14 +84,14 @@ class PDFDocument:
         self.images = []
         self.images_already_analyzed = False
         self.image_coverage = None
-        self.pdf_text = ""
+        self.pdf_text: Optional[str] = None
 
     def get_absolute_path(self):
         return os.path.join(self.folder_path_abs, self.file_name)
 
     # Get text stored inside the document
     def get_pdf_text(self):
-        if not self.pdf_text:
+        if self.pdf_text is None:
             self.pdf_text = self.read_ocr()
         return self.pdf_text
             
@@ -118,6 +128,7 @@ class PDFDocument:
         metadata = pdf_document.metadata
         metadata['title'] = self.title
         metadata['subject'] = self.summary
+        metadata['summary'] = self.summary
         metadata['author'] = self.creator
         metadata['keywords'] = ', '.join(self.tags)
 
@@ -186,33 +197,60 @@ class PDFDocument:
             "importance_confidence": self.importance_confidence
         })
 
+    @staticmethod
+    def _clean_text(text: str) -> str:
+        if not text:
+            return ""
+        text = text.replace('\n', ' ').replace('\r', ' ')
+        text = re.sub(r'[^\w\s.,:;/+\-]', '', text, flags=re.UNICODE)
+        return re.sub(r'\s+', ' ', text, flags=re.UNICODE).strip()
+
     def read_ocr(self):
         """
-        Reads and extracts text from all pages of the PDF document.
-        Cleans the text by removing non-readable characters and replacing line breaks.
+        Extract text from the PDF. Fallback to OCR if the document lacks a text layer
+        and a configured OCR runner is available.
         """
+        pdf_document = None
         try:
             pdf_document = fitz.open(self.get_absolute_path())
+            page_count = len(pdf_document)
 
-            # Initialize text extraction
-            pdf_text = ""
-            for page_num in range(len(pdf_document)):
-                page = pdf_document[page_num]
+            raw_segments = []
+            has_text_layer = False
+
+            for index in range(page_count):
+                page = pdf_document[index]
                 page_text = page.get_text("text")
-                pdf_text += page_text
+                raw_segments.append(page_text)
+                if page_text and page_text.strip():
+                    has_text_layer = True
 
-            # Clean text by removing unwanted characters and line breaks
-            pdf_text = pdf_text.replace('\n', ' ').replace('\r', ' ')
-            pdf_text = re.sub(r'[^\w\s.,:;/+\-]', '', pdf_text, flags=re.UNICODE)
-            pdf_text = re.sub(r'\s+', ' ', pdf_text, flags=re.UNICODE).strip()
+            if has_text_layer:
+                combined = " ".join(raw_segments)
+                return self._clean_text(combined)
 
-            pdf_document.close()
-            #logging.debug(f"Extracted text from {self.file_name}:\n{self.pdf_text}\n----------------\n")
-            return pdf_text
+            runner = self._ocr_runner
+            if runner:
+                logging.info("Running OCR for %s (%d pages).", self.file_name, page_count)
+                ocr_segments = []
+                for index in range(page_count):
+                    page = pdf_document[index]
+                    ocr_text = runner.extract_text_from_page(page)
+                    if ocr_text:
+                        ocr_segments.append(ocr_text)
+                combined = " ".join(ocr_segments)
+                if combined.strip():
+                    return self._clean_text(combined)
+                logging.info("OCR returned no text for %s.", self.file_name)
+
+            return ""
 
         except Exception as e:
             logging.error(f"Failed to extract text from {self.file_name}:\nError Message: {e}")
-            return None
+            return ""
+        finally:
+            if pdf_document is not None:
+                pdf_document.close()
 
 
     def create_thumbnail(self, thumbnail_filename, max_width=64):
@@ -361,8 +399,9 @@ class PDFDocument:
             # Set metadata values if not empty
             if metadata.get('title'):
                 self.set_title(metadata['title'], title_conf)
-            if metadata.get('subject'):
-                self.set_summary(metadata['subject'], summary_conf)
+            summary_text = metadata.get('subject') or metadata.get('summary')
+            if summary_text:
+                self.set_summary(summary_text, summary_conf)
             if metadata.get('creationDate'):
                 self.set_creation_date(metadata['creationDate'], creation_date_conf)
             if metadata.get('author'):

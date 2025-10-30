@@ -49,6 +49,12 @@ autoPDFtagger is designed to reduce AI costs by extracting as much information a
 
 Future optimizations (ideas): caching previous results to skip re‑analysis of unchanged documents, chunked text processing for very large PDFs, and optional iterative vision passes that stop as soon as confidence is sufficient.
 
+## OCR Integration
+
+- autoPDFtagger checks for a local Tesseract binary on startup. If found (or explicitly enabled with `--ocr`), pages without a text layer are OCR'd before the AI text analysis runs.
+- Configure defaults in `[OCR]` within `~/.autoPDFtagger.conf` (`enabled = auto|true|false`, `languages = deu+eng`, etc.). CLI flags `--ocr`, `--no-ocr`, and `--ocr-languages` override these settings per invocation.
+- When OCR is disabled (config/CLI or missing binary), the existing behaviour remains unchanged; PDFs that already contain text skip the OCR step automatically.
+
 ## Concept and Context
 
 - Problem: Many documents arrive as scans or mixed‑quality PDFs. Plain OCR often misses context (drawings, photos), and ad‑hoc filenames make long‑term search difficult.
@@ -96,6 +102,10 @@ text_threshold_words = 100
 image_model = openai/gpt-4o   ; or gemini/gemini-1.5-pro or ollama/llava
 tag_model = openai/gpt-4o-mini
 image_temperature = 0.8
+
+[OCR]
+enabled = auto
+languages = eng
 
 [OPENAI-API]
 ; Optional fallback if OPENAI_API_KEY is not set
@@ -167,6 +177,10 @@ options:
   --keep-below [KEEP_BELOW]
                         Analogous to --keep-above. Retain only document with an index less than specified.
   --calc-stats          Calculate statistics and (roughly!) estimate costs for different analyses
+  --ocr                 Enable OCR before AI text analysis (requires Tesseract)
+  --no-ocr              Force-disable OCR regardless of configuration
+  --ocr-languages OCR_LANGUAGES
+                        Override Tesseract language codes (e.g. 'deu+eng')
 ```
 
 ## Examples

@@ -148,6 +148,52 @@ def test_get_pdf_text_uses_fitz(monkeypatch, make_pdf_document):
     assert fake_doc.closed
 
 
+def test_get_pdf_text_uses_ocr_when_text_layer_missing(monkeypatch, make_pdf_document):
+    from autoPDFtagger.PDFDocument import PDFDocument
+
+    class DummyRunner:
+        def __init__(self):
+            self.calls = 0
+
+        def extract_text_from_page(self, page):
+            self.calls += 1
+            return f"page{self.calls}"
+
+    runner = DummyRunner()
+    PDFDocument.configure_ocr(runner)
+
+    class FakePage:
+        def get_text(self, mode):
+            assert mode == "text"
+            return ""
+
+    class FakeDoc:
+        def __init__(self):
+            self.closed = False
+
+        def __len__(self):
+            return 2
+
+        def __getitem__(self, index):
+            assert index in (0, 1)
+            return FakePage()
+
+        def close(self):
+            self.closed = True
+
+    fake_doc = FakeDoc()
+    monkeypatch.setattr("autoPDFtagger.PDFDocument.fitz.open", lambda _: fake_doc)
+
+    doc = make_pdf_document("scan.pdf")
+    text_first = doc.get_pdf_text()
+    text_second = doc.get_pdf_text()
+
+    assert text_first == "page1 page2"
+    assert text_second == "page1 page2"
+    assert runner.calls == 2
+    assert fake_doc.closed
+
+
 def test_save_to_file_updates_metadata(tmp_path, monkeypatch, make_pdf_document):
     doc = make_pdf_document("source.pdf")
     doc.set_title("Budget Memo", 7)

@@ -45,7 +45,7 @@ class TrackingFileList:
 class TrackingArchive:
     instances = []
 
-    def __init__(self):
+    def __init__(self, ocr_runner=None):
         self.calls = []
         self.file_list = TrackingFileList(self)
         self.__class__.instances.append(self)
@@ -90,7 +90,7 @@ def test_cli_requires_output_option(tmp_path, monkeypatch, caplog):
     class StubArchive:
         instances = []
 
-        def __init__(self):
+        def __init__(self, ocr_runner=None):
             self.ai_text_called = False
             self.file_list = SimpleNamespace(
                 pdf_documents={},

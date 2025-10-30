@@ -5,6 +5,7 @@ import os
 import sys
 
 from autoPDFtagger.config import config
+from autoPDFtagger import ocr
 
 def main():
      # ArgumentParser-Setup für CLI-Optionen
@@ -24,6 +25,10 @@ def main():
     parser.add_argument("--keep-above", nargs="?", type=int, const=7, default=None, help="Before applying actions, filter out and retain only the documents with a confidence index greater than or equal to a specific value (default: 7).")
     parser.add_argument("--keep-below", nargs="?", type=int, const=7, default=None, help="Analogous to --keep-above. Retain only document with an index less than specified.")
     parser.add_argument("--calc-stats", help="Calculate statistics and (roughly!) estimate costs for different analyses", action="store_true")
+    parser.add_argument("--ocr", dest="ocr", action="store_true", help="Enable OCR before AI text analysis (requires Tesseract)")
+    parser.add_argument("--no-ocr", dest="ocr", action="store_false", help="Force-disable OCR regardless of configuration")
+    parser.add_argument("--ocr-languages", help="Override Tesseract language codes (e.g. 'deu+eng')")
+    parser.set_defaults(ocr=None)
 
     args = parser.parse_args()
 
@@ -36,11 +41,16 @@ def main():
 
     # After loading configuration:
     from autoPDFtagger.autoPDFtagger import autoPDFtagger
+    ocr_setup = ocr.prepare_ocr_setup(
+        config,
+        cli_enabled=args.ocr,
+        cli_languages=args.ocr_languages,
+    )
 
     logging.basicConfig(level=debug_levels[args.debug], format='%(asctime)s - %(levelname)s ::: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S')
 
-    archive = autoPDFtagger()
+    archive = autoPDFtagger(ocr_runner=ocr_setup.runner)
 
     # Read JSON from StdIn
     def stdin_has_data():
