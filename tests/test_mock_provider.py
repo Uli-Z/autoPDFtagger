@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -129,4 +130,16 @@ def test_fetch_handles_invalid_json(make_pdf_document, caplog):
 
     assert response is None
     assert usage == {"cost": 0.0}
+
+
+def test_fetch_honors_test_sleep(monkeypatch, make_pdf_document):
+    from autoPDFtagger.config import config
+    from autoPDFtagger import mock_provider
+    doc = make_pdf_document("latency.pdf")
+    # inject a small artificial latency
+    config.read_dict({"AI": {"test_mock_sleep_ms": "120"}})
+    start = time.perf_counter()
+    response, usage = mock_provider.fetch(doc, "text")
+    elapsed = time.perf_counter() - start
+    assert elapsed >= 0.1
     assert any("Failed to load mock response" in record.message for record in caplog.records)

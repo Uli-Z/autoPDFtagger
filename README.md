@@ -55,6 +55,24 @@ Future optimizations (ideas): caching previous results to skip re‑analysis of 
 - Configure defaults in `[OCR]` within `~/.autoPDFtagger.conf` (`enabled = auto|true|false`, `languages = deu+eng`, etc.). CLI flags `--ocr`, `--no-ocr`, and `--ocr-languages` override these settings per invocation.
 - When OCR is disabled (config/CLI or missing binary), the existing behaviour remains unchanged; PDFs that already contain text skip the OCR step automatically.
 
+## Parallel Jobs and Concurrency
+
+- OCR and AI analyses run in parallel with configurable limits.
+- Defaults: OCR uses the number of CPU cores; AI (text+image combined) uses up to 4 concurrent jobs.
+- Configure under `[JOBS]` in your config:
+  - `ocr_max_workers` (default: CPU cores)
+  - `ai_max_workers` (default: 4)
+  - `status_interval_sec` (default: 2.0) — frequency of status summaries in logs.
+- When stdout goes to a file the CLI prints JSON only; the live progress bar stays on stderr.
+- Text analysis jobs automatically depend on OCR for the same document (when OCR is available), ensuring correct order while still maximizing throughput.
+
+## Testing AIs (Mock Mode)
+
+- Use models like `TEST/anything` in `[AI]` to activate file-based mock responses (see `tests` and `mock_provider`).
+- You can simulate network latency for visual testing of the status board:
+  - Set `[AI] test_mock_sleep_ms = 250` to delay mock responses by 250 ms.
+  - The delay applies to both mock text and image tasks.
+
 ## Concept and Context
 
 - Problem: Many documents arrive as scans or mixed‑quality PDFs. Plain OCR often misses context (drawings, photos), and ad‑hoc filenames make long‑term search difficult.

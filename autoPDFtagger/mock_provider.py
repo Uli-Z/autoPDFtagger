@@ -1,8 +1,10 @@
 import json
 import logging
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
+from autoPDFtagger.config import config
 
 ResponseTuple = Tuple[Optional[str], Dict[str, Any]]
 
@@ -37,6 +39,14 @@ def fetch(doc, task: str, *, context: Optional[dict] = None) -> ResponseTuple:
     index = _call_counts[key]
     _call_counts[key] += 1
     candidates = list(_candidate_paths(path, task, index))
+
+    # Optional artificial latency for testing UI/concurrency (ms)
+    try:
+        latency_ms = int(config.get("AI", "test_mock_sleep_ms", fallback="0") or 0)
+    except Exception:
+        latency_ms = 0
+    if latency_ms > 0:
+        time.sleep(latency_ms / 1000.0)
 
     for candidate in candidates:
         if candidate.exists():

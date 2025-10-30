@@ -1,12 +1,14 @@
-import os
 import json
-import time
 import logging
+import os
+import threading
+import time
 import traceback
 from autoPDFtagger.config import config
 from autoPDFtagger.PDFList import PDFList
 from autoPDFtagger import ai_tasks, mock_provider
 from autoPDFtagger.PDFDocument import PDFDocument
+from autoPDFtagger.job_manager import JobManager, Job
 
 class autoPDFtagger:
     def __init__(self, ocr_runner=None, ai_log_path=None):
@@ -92,6 +94,113 @@ class autoPDFtagger:
                 document.set_from_json(response)
             costs += float(usage.get('cost', 0.0) or 0.0)
         logging.info("Spent " + str(costs) + " $ for image analysis")
+
+    def run_jobs_parallel(
+        self,
+        do_text: bool,
+        do_image: bool,
+        enable_ocr: bool,
+    ) -> None:
+        """Run requested jobs with configurable concurrency and dependencies.
+
+        - OCR jobs run on the local machine (Tesseract) and are limited by CPU cores (configurable).
+        - AI jobs (text + image) share a single pool limited by a global max (configurable).
+        - Text jobs depend on OCR job for the same document when OCR is enabled.
+        - Periodically logs a status overview (pending/running/done/failed per kind).
+        """
+        if not (do_text or do_image):
+            return
+
+        # Read concurrency settings
+        try:
+            ocr_workers = int(config.get('JOBS', 'ocr_max_workers', fallback=str(os.cpu_count() or 2)))
+        except Exception:
+            ocr_workers = os.cpu_count() or 2
+        try:
+            ai_workers = int(config.get('JOBS', 'ai_max_workers', fallback='4'))
+        except Exception:
+            ai_workers = 4
+        try:
+            status_interval = float(config.get('JOBS', 'status_interval_sec', fallback='2.0'))
+        except Exception:
+            status_interval = 2.0
+
+        jm = JobManager(
+            ocr_workers=ocr_workers,
+            ai_workers=ai_workers,
+            status_interval_sec=status_interval,
+        )
+
+        # Shared cost accumulators
+        lock = threading.Lock()
+        totals = {"text": 0.0, "image": 0.0}
+
+        # Read AI config once
+        ms = config.get('AI', 'text_model_short', fallback='')
+        ml = config.get('AI', 'text_model_long', fallback='')
+        thr = int(config.get('AI', 'text_threshold_words', fallback='100'))
+        image_model = config.get('AI', 'image_model', fallback='')
+
+        for document in self.file_list.pdf_documents.values():
+            abs_path = document.get_absolute_path()
+            ocr_id = f"ocr:{abs_path}"
+
+            if enable_ocr:
+                def _make_ocr(doc=document):
+                    def _run():
+                        logging.info("[OCR] %s", doc.file_name)
+                        # Trigger text extraction (this will OCR when needed)
+                        _ = doc.get_pdf_text()
+                        logging.info("[OCR done] %s", doc.file_name)
+                    return _run
+                jm.add_job(Job(id=ocr_id, kind="ocr", run=_make_ocr()))
+
+            if do_text:
+                def _make_text(doc=document):
+                    def _run():
+                        try:
+                            logging.info("[AI text] %s", doc.file_name)
+                            response, usage = ai_tasks.analyze_text(doc, ms, ml, thr)
+                            self._log_ai_response("text", doc, response, usage)
+                            if response:
+                                doc.set_from_json(response)
+                            with lock:
+                                totals["text"] += float((usage or {}).get('cost', 0.0) or 0.0)
+                            logging.info("[AI text done] %s", doc.file_name)
+                        except Exception as exc:
+                            logging.error("Text analysis failed for %s: %s", doc.file_name, exc)
+                            raise
+                    return _run
+                deps = [ocr_id] if enable_ocr else []
+                jm.add_job(Job(id=f"text:{abs_path}", kind="text", run=_make_text(), deps=deps))
+
+            if do_image:
+                def _make_img(doc=document):
+                    def _run():
+                        try:
+                            logging.info("[AI image] %s", doc.file_name)
+                            response, usage = ai_tasks.analyze_images(doc, image_model)
+                            self._log_ai_response("image", doc, response, usage)
+                            if response:
+                                doc.set_from_json(response)
+                            with lock:
+                                totals["image"] += float((usage or {}).get('cost', 0.0) or 0.0)
+                            logging.info("[AI image done] %s", doc.file_name)
+                        except Exception as exc:
+                            logging.error("Image analysis failed for %s: %s", doc.file_name, exc)
+                            raise
+                    return _run
+                # Image analysis does not require OCR; keep independent
+                jm.add_job(Job(id=f"image:{abs_path}", kind="image", run=_make_img()))
+
+        # Run and summarize
+        pending, running, done, failed = jm.run()
+        if failed:
+            logging.warning("Some jobs failed: %d failed, %d completed", failed, done)
+        if do_text:
+            logging.info(f"Spent {totals['text']:.4f} $ for text analysis")
+        if do_image:
+            logging.info(f"Spent {totals['image']:.4f} $ for image analysis")
 
     # Simplify and unify tags over all documents in the database
     def ai_tag_analysis(self):

@@ -6,6 +6,7 @@ import sys
 
 from autoPDFtagger.config import config
 from autoPDFtagger import ocr
+from autoPDFtagger.logging_utils import configure_logging
 
 def main():
      # ArgumentParser-Setup für CLI-Optionen
@@ -48,8 +49,12 @@ def main():
         cli_languages=args.ocr_languages,
     )
 
-    logging.basicConfig(level=debug_levels[args.debug], format='%(asctime)s - %(levelname)s ::: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S')
+    # Ensure logs are visible and integrate with status board rendering
+    configure_logging(
+        level=debug_levels[args.debug],
+        fmt='%(asctime)s - %(levelname)s ::: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+    )
 
     archive = autoPDFtagger(ocr_runner=ocr_setup.runner, ai_log_path=args.debug_ai_log)
 
@@ -90,17 +95,18 @@ def main():
     def is_output_option_set():
         return args.export is not None or hasattr(args, "json") or args.csv is not None
 
-    if args.ai_text_analysis:
+    # Parallel job execution for AI + OCR based on configuration
+    if args.ai_text_analysis or args.ai_image_analysis:
         if is_output_option_set():
-            archive.ai_text_analysis()
+            # Enable OCR stage whenever a runner is available and text analysis is requested.
+            enable_ocr = bool(ocr_setup.runner) and bool(args.ai_text_analysis)
+            archive.run_jobs_parallel(
+                do_text=bool(args.ai_text_analysis),
+                do_image=bool(args.ai_image_analysis),
+                enable_ocr=enable_ocr,
+            )
         else:
-            logging.error("No output option is set. Skipping text analysis. Did you want to use --json?")
-
-    if args.ai_image_analysis:
-        if is_output_option_set():
-            archive.ai_image_analysis()
-        else:
-            logging.error("No output option is set. Skipping image analysis. Did you want to use --json?")
+            logging.error("No output option is set. Skipping AI analyses. Did you want to use --json?")
 
     if args.ai_tag_analysis:
         if is_output_option_set():
