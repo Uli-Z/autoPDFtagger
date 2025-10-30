@@ -1,0 +1,58 @@
+[
+    {
+        "folder_path_abs": "/home/uzorn/Git/autoPDFtagger/testfiles",
+        "relative_path": ".",
+        "base_directory_abs": "/home/uzorn/Git/autoPDFtagger/testfiles",
+        "file_name": "invoice1-scan-low-quality.pdf",
+        "summary": "This document is an invoice issued by Beispielfima GmbH to Alice M\u00fcller dated 11 May 2023. It lists two line items with a net amount of 275.00 EUR, a 19% VAT of 52.25 EUR, and an overall total of about 327.25 EUR. The invoice references number RE-2013-12345 and customer number 12345; the due date shown is 25 May 2015, which appears to be an OCR error. Payment instructions point to the provided bank account and contact details are included.",
+        "summary_confidence": 7,
+        "title": "Beispielfima GmbH Rechnung",
+        "title_confidence": 8,
+        "creation_date": null,
+        "creation_date_confidence": 0,
+        "creator": "Beispielfima GmbH",
+        "creator_confidence": 9,
+        "tags": [
+            "invoice",
+            "Germany",
+            "GmbH",
+            "accounts payable",
+            "Beispielfima"
+        ],
+        "tags_confidence": [
+            7,
+            7,
+            7,
+            7,
+            7
+        ],
+        "importance": 7,
+        "importance_confidence": 7
+    },
+    {
+        "folder_path_abs": "/home/uzorn/Git/autoPDFtagger/testfiles",
+        "relative_path": ".",
+        "base_directory_abs": "/home/uzorn/Git/autoPDFtagger/testfiles",
+        "file_name": "invoife1-scan-bad-quality.pdf",
+        "summary": "The document appears to be a scanned invoice of very poor quality. The OCR text is largely garbled, providing little usable data. The filename indicates it's an invoice (invoife1-scan-bad-quality.pdf) and the visible fragments include references to fax and invoice-related terms, but no clear date, amount, or issuer can be extracted. Overall, the document seems to be in a noisy state with unreliable content.",
+        "summary_confidence": 8,
+        "title": "Bad-Quality Invoice Scan",
+        "title_confidence": 8,
+        "creation_date": null,
+        "creation_date_confidence": 0,
+        "creator": "",
+        "creator_confidence": 0,
+        "tags": [
+            "invoice",
+            "bad scan",
+            "low-quality OCR"
+        ],
+        "tags_confidence": [
+            7,
+            6,
+            6
+        ],
+        "importance": 4,
+        "importance_confidence": 6
+    }
+]

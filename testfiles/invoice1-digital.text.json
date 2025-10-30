@@ -1,0 +1,36 @@
+{
+  "response": {
+    "summary": "Beispielfirma GmbH issues an invoice to Frau Müller for utensils (forks, knives, spoons) with quantities, unit prices, and totals. The itemized net amount is 275.00 EUR, VAT 19% 52.25 EUR, bringing the total to 327.25 EUR, with payment due by 25.05.2015 to the listed bank account. The document includes invoice number RE-2013-12345, customer number 12345, and dates such as Datum 11.05.2015 and Rechnungsdatum 11.05.2023, indicating potential date inconsistencies. Contact person Manuela Schmidt and the Beispielfirma address are provided.",
+    "summary_confidence": 9,
+    "title": "Invoice from Beispielfirma",
+    "title_confidence": 9,
+    "creation_date": "2015-05-11",
+    "creation_date_confidence": 6,
+    "creator": "Beispielfirma GmbH",
+    "creator_confidence": 9,
+    "tags": [
+      "invoice",
+      "Beispielfirma GmbH",
+      "utensils",
+      "Gabeln Messer Löffel",
+      "RE-2013-12345",
+      "customer 12345"
+    ],
+    "tags_confidence": [
+      9,
+      9,
+      9,
+      9,
+      8,
+      9
+    ],
+    "importance": 6,
+    "importance_confidence": 8
+  },
+  "usage": {
+    "prompt_tokens": 650,
+    "completion_tokens": 2628,
+    "total_tokens": 3278,
+    "cost": 0.0
+  }
+}

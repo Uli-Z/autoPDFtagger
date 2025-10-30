@@ -1,0 +1,34 @@
+{
+  "response": {
+    "summary": "An invoice from Beispiel Firma GmbH to Alice Müller. It carries the invoice number RE-2013-12345 with date 11.05.2023. The document lists three items: Gabeln (15 pieces at 10 € each), Messer (10 pieces at 5 € each), and Löffel (3 pieces at 25 € each). Net amount is 275.00 €, plus 19% VAT (52.25 €), totaling 327.25 €. The payment is requested by 25.05.2015 using the reference RE-2013-12345.",
+    "summary_confidence": 7,
+    "title": "Rechnung Beispiel Firma GmbH",
+    "title_confidence": 8,
+    "creation_date": "11.05.2023",
+    "creation_date_confidence": 7,
+    "creator": "Beispiel Firma GmbH",
+    "creator_confidence": 8,
+    "tags": [
+      "invoice",
+      "german document",
+      "Beispiel Firma GmbH",
+      "RE-2013-12345",
+      "Gabeln Messer Löffel"
+    ],
+    "tags_confidence": [
+      6,
+      6,
+      7,
+      7,
+      6
+    ],
+    "importance": 6,
+    "importance_confidence": 6
+  },
+  "usage": {
+    "prompt_tokens": 2438,
+    "completion_tokens": 2591,
+    "total_tokens": 5029,
+    "cost": 0.0
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "response": {
+    "summary": "This page is a German early-math worksheet titled 'Bilder suchen und legen' focused on basic geometry. It features a color-by-shape mosaic coloring activity, a counting task to identify squares, rectangles, triangles, and circles, and a construction exercise using 12 sticks to form various shapes. There are additional pattern and replication tasks at the bottom of the page. The exercises aim to help young learners recognize geometric shapes and develop early geometry and counting skills.",
+    "summary_confidence": 7,
+    "title": "Geometric Shapes Practice",
+    "title_confidence": 6,
+    "creation_date": null,
+    "creation_date_confidence": 0,
+    "creator": "Unknown publisher",
+    "creator_confidence": 2,
+    "tags": [
+      "geometric shapes",
+      "coloring by shape",
+      "counting shapes",
+      "pattern construction",
+      "early education"
+    ],
+    "tags_confidence": [
+      7,
+      6,
+      6,
+      5,
+      5
+    ],
+    "importance": 5,
+    "importance_confidence": 6
+  },
+  "usage": {
+    "prompt_tokens": 2369,
+    "completion_tokens": 2091,
+    "total_tokens": 4460,
+    "cost": 0.0
+  }
+}

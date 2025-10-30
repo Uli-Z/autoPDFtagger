@@ -1,0 +1,34 @@
+{
+  "response": {
+    "summary": "An example invoice issued by Beispielfirma GmbH to client Alice Müller. The document includes an itemized charges section listing forks, knives, and spoons with quantities and unit prices, resulting in a net amount of 275.00 EUR. VAT at 19% adds 52.25 EUR, for a total of 327.25 EUR, with payment due by the date specified on the invoice. It also provides contact details for the issuer and bank transfer information for payment.",
+    "summary_confidence": 8,
+    "title": "Sample Invoice Document",
+    "title_confidence": 9,
+    "creation_date": "2023-05-11",
+    "creation_date_confidence": 9,
+    "creator": "Beispielfirma GmbH",
+    "creator_confidence": 9,
+    "tags": [
+      "invoice",
+      "example",
+      "german",
+      "kitchenware",
+      "Beispielfirma"
+    ],
+    "tags_confidence": [
+      9,
+      8,
+      7,
+      7,
+      9
+    ],
+    "importance": 4,
+    "importance_confidence": 8
+  },
+  "usage": {
+    "prompt_tokens": 671,
+    "completion_tokens": 3322,
+    "total_tokens": 3993,
+    "cost": 0.0
+  }
+}

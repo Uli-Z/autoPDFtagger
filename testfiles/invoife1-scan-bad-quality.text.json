@@ -1,0 +1,30 @@
+{
+  "response": {
+    "summary": "The document appears to be a scanned invoice of very poor quality. The OCR text is largely garbled, providing little usable data. The filename indicates it's an invoice (invoife1-scan-bad-quality.pdf) and the visible fragments include references to fax and invoice-related terms, but no clear date, amount, or issuer can be extracted. Overall, the document seems to be in a noisy state with unreliable content.",
+    "summary_confidence": 8,
+    "title": "Bad-Quality Invoice Scan",
+    "title_confidence": 8,
+    "creation_date": null,
+    "creation_date_confidence": 0,
+    "creator": "",
+    "creator_confidence": 0,
+    "tags": [
+      "invoice",
+      "bad scan",
+      "low-quality OCR"
+    ],
+    "tags_confidence": [
+      7,
+      6,
+      6
+    ],
+    "importance": 4,
+    "importance_confidence": 6
+  },
+  "usage": {
+    "prompt_tokens": 360,
+    "completion_tokens": 1811,
+    "total_tokens": 2171,
+    "cost": 0.0
+  }
+}

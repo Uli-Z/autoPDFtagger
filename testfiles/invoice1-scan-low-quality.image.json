@@ -1,0 +1,38 @@
+{
+  "response": {
+    "summary": "BeispielFirma GmbH invoices Alice Müller for cutlery items (Gabeln, Messer, Löffel). The bill lists quantities (Gabeln 15, Messer 10, Löffel 3), unit prices (10.00 €, 5.00 €, 25.00 €) and line totals (150,00 €, 50,00 €, 75,00 €). Subtotal is 275,00 €, plus 19% VAT of 52,25 €, yielding a total invoice amount of 327,25 €. The document includes invoice date 11.05.2023 and contact details of the supplier.",
+    "summary_confidence": 8,
+    "title": "BeispielFirma Rechnung 2023",
+    "title_confidence": 7,
+    "creation_date": "2023-05-11",
+    "creation_date_confidence": 8,
+    "creator": "BeispielFirma GmbH",
+    "creator_confidence": 8,
+    "tags": [
+      "invoice",
+      "BeispielFirma GmbH",
+      "cutlery",
+      "Gabeln",
+      "Messer",
+      "Löffel",
+      "Germany"
+    ],
+    "tags_confidence": [
+      8,
+      8,
+      7,
+      7,
+      7,
+      7,
+      7
+    ],
+    "importance": 5,
+    "importance_confidence": 7
+  },
+  "usage": {
+    "prompt_tokens": 2369,
+    "completion_tokens": 2796,
+    "total_tokens": 5165,
+    "cost": 0.0
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "response": {
+    "summary": "A child's drawing showing two people standing in front of a mountain landscape. Across the sky is colorful, blocky handwriting that reads 'NÄCHSTES MAL KOMME ICH MIT' (Next time I will come with). The figures wear bright blue and red clothing, with green pants and red shoes, set against gray, jagged mountains. The scene conveys a hopeful message of joining or accompanying someone on a future trip.",
+    "summary_confidence": 7,
+    "title": "Nächstes Mal Komme Ich",
+    "title_confidence": 7,
+    "creation_date": null,
+    "creation_date_confidence": 0,
+    "creator": "Child artist (unknown)",
+    "creator_confidence": 7,
+    "tags": [
+      "child drawing",
+      "mountain landscape",
+      "handwritten text",
+      "German language",
+      "family scene"
+    ],
+    "tags_confidence": [
+      7,
+      6,
+      6,
+      5,
+      6
+    ],
+    "importance": 4,
+    "importance_confidence": 6
+  },
+  "usage": {
+    "prompt_tokens": 2369,
+    "completion_tokens": 2600,
+    "total_tokens": 4969,
+    "cost": 0.0
+  }
+}

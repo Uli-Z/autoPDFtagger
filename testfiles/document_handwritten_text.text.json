@@ -1,0 +1,36 @@
+{
+  "response": {
+    "summary": "The OCR indicates a German educational workbook page focused on recognizing basic geometric shapes. It prompts students to search for and place pictures, then count and form shapes such as squares, rectangles, triangles, and circles using sticks or chips. The activities include continuing a pattern, coloring areas, and reproducing the given pattern with manipulatives. The heading translates to a unit on recognizing geometric basic shapes.",
+    "summary_confidence": 6,
+    "title": "Recognizing Geometric Shapes",
+    "title_confidence": 6,
+    "creation_date": null,
+    "creation_date_confidence": 0,
+    "creator": "",
+    "creator_confidence": 0,
+    "tags": [
+      "geometry",
+      "shapes",
+      "children",
+      "education",
+      "patterns",
+      "coloring"
+    ],
+    "tags_confidence": [
+      6,
+      6,
+      5,
+      6,
+      5,
+      6
+    ],
+    "importance": 5,
+    "importance_confidence": 4
+  },
+  "usage": {
+    "prompt_tokens": 382,
+    "completion_tokens": 2522,
+    "total_tokens": 2904,
+    "cost": 0.0
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "response": {
+    "summary": "An invoice addressed to Alice Muller from Beispiel Firma GmbH. The document lists three items with quantities and unit prices, totaling 275.00 € before tax. It shows a 19% VAT amounting to 52.25 €, for a grand total of 327.25 €. Customer and company details, along with payment terms, are present on the page.",
+    "summary_confidence": 6,
+    "title": "Invoice to Alice Muller",
+    "title_confidence": 6,
+    "creation_date": "11.05.2013",
+    "creation_date_confidence": 6,
+    "creator": "Beispiel Firma GmbH",
+    "creator_confidence": 6,
+    "tags": [
+      "invoice",
+      "rechnung",
+      "Germany",
+      "business"
+    ],
+    "tags_confidence": [
+      7,
+      7,
+      6,
+      6
+    ],
+    "importance": 6,
+    "importance_confidence": 6
+  },
+  "usage": {
+    "prompt_tokens": 2389,
+    "completion_tokens": 2834,
+    "total_tokens": 5223,
+    "cost": 0.0
+  }
+}

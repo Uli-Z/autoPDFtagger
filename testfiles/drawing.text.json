@@ -1,0 +1,30 @@
+{
+  "response": {
+    "summary": "The document appears to be a drawing file (drawing.pdf). The OCR content provided is garbled and does not reveal any meaningful text or data. With only the file name visible, no author, date, or subject can be inferred. The overall context is insufficient to determine purpose or content.",
+    "summary_confidence": 5,
+    "title": "Untitled Drawing Sketch",
+    "title_confidence": 4,
+    "creation_date": null,
+    "creation_date_confidence": 0,
+    "creator": "",
+    "creator_confidence": 0,
+    "tags": [
+      "drawing",
+      "sketch",
+      "unknown content"
+    ],
+    "tags_confidence": [
+      5,
+      4,
+      2
+    ],
+    "importance": 2,
+    "importance_confidence": 3
+  },
+  "usage": {
+    "prompt_tokens": 295,
+    "completion_tokens": 1779,
+    "total_tokens": 2074,
+    "cost": 0.0
+  }
+}

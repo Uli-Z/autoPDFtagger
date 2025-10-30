@@ -1,0 +1,36 @@
+{
+  "response": {
+    "summary": "The document context shows a file named 'drawing with date.pdf' located at the root. OCR output for the content is 'KOMnlcH hT 0L.08.oAy', which appears to be garbled and non-informative. There is no explicit creation date or creator provided in the metadata; the filename suggests a drawing with a date but no date is shown. Overall, the available information is very limited and primarily metadata-based from the filename.",
+    "summary_confidence": 5,
+    "title": "Drawing with date",
+    "title_confidence": 8,
+    "creation_date": null,
+    "creation_date_confidence": 0,
+    "creator": "",
+    "creator_confidence": 0,
+    "tags": [
+      "OCR gibberish",
+      "PDF metadata",
+      "drawing",
+      "date",
+      "garbled text",
+      "filename cue"
+    ],
+    "tags_confidence": [
+      6,
+      5,
+      6,
+      5,
+      4,
+      4
+    ],
+    "importance": 2,
+    "importance_confidence": 4
+  },
+  "usage": {
+    "prompt_tokens": 301,
+    "completion_tokens": 2030,
+    "total_tokens": 2331,
+    "cost": 0.0
+  }
+}

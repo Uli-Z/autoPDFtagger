@@ -1,0 +1,36 @@
+{
+  "response": {
+    "summary": "A child’s drawing shows two people in bright clothing standing before a jagged mountain range. Across the mountains is a colorful German message reading 'Nächstes Mal Komm Ich Mit' (Next time I come with). In the bottom right, a separate white card displays the date 02.08.2014 in red ink. The scene appears playful and spontaneous, created with crayons and simple shapes.",
+    "summary_confidence": 7,
+    "title": "Next Time I Come",
+    "title_confidence": 7,
+    "creation_date": "2014-08-02",
+    "creation_date_confidence": 6,
+    "creator": "Unknown child",
+    "creator_confidence": 5,
+    "tags": [
+      "child artwork",
+      "crayon drawing",
+      "mountains",
+      "German text",
+      "date stamp",
+      "family/friends"
+    ],
+    "tags_confidence": [
+      7,
+      7,
+      6,
+      6,
+      6,
+      6
+    ],
+    "importance": 4,
+    "importance_confidence": 5
+  },
+  "usage": {
+    "prompt_tokens": 2369,
+    "completion_tokens": 1692,
+    "total_tokens": 4061,
+    "cost": 0.0
+  }
+}

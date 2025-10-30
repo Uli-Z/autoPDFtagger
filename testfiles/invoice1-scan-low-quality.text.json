@@ -1,0 +1,34 @@
+{
+  "response": {
+    "summary": "This document is an invoice issued by Beispielfima GmbH to Alice Müller dated 11 May 2023. It lists two line items with a net amount of 275.00 EUR, a 19% VAT of 52.25 EUR, and an overall total of about 327.25 EUR. The invoice references number RE-2013-12345 and customer number 12345; the due date shown is 25 May 2015, which appears to be an OCR error. Payment instructions point to the provided bank account and contact details are included.",
+    "summary_confidence": 7,
+    "title": "Beispielfima GmbH Rechnung",
+    "title_confidence": 8,
+    "creation_date": "11.05.2023",
+    "creation_date_confidence": 7,
+    "creator": "Beispielfima GmbH",
+    "creator_confidence": 9,
+    "tags": [
+      "invoice",
+      "Germany",
+      "GmbH",
+      "accounts payable",
+      "Beispielfima"
+    ],
+    "tags_confidence": [
+      7,
+      7,
+      7,
+      7,
+      7
+    ],
+    "importance": 7,
+    "importance_confidence": 7
+  },
+  "usage": {
+    "prompt_tokens": 663,
+    "completion_tokens": 3281,
+    "total_tokens": 3944,
+    "cost": 0.0
+  }
+}
