@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--ocr", dest="ocr", action="store_true", help="Enable OCR before AI text analysis (requires Tesseract)")
     parser.add_argument("--no-ocr", dest="ocr", action="store_false", help="Force-disable OCR regardless of configuration")
     parser.add_argument("--ocr-languages", help="Override Tesseract language codes (e.g. 'deu+eng')")
+    parser.add_argument("--debug-ai-log", help="Append raw AI JSON responses to the given log file", default=None)
     parser.set_defaults(ocr=None)
 
     args = parser.parse_args()
@@ -50,7 +51,7 @@ def main():
     logging.basicConfig(level=debug_levels[args.debug], format='%(asctime)s - %(levelname)s ::: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S')
 
-    archive = autoPDFtagger(ocr_runner=ocr_setup.runner)
+    archive = autoPDFtagger(ocr_runner=ocr_setup.runner, ai_log_path=args.debug_ai_log)
 
     # Read JSON from StdIn
     def stdin_has_data():

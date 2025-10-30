@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from autoPDFtagger import ai_tasks
+from autoPDFtagger import ai_tasks, mock_provider
 
 
 def _write_mock(path: Path, payload):
@@ -66,3 +66,67 @@ def test_analyze_images_handles_multiple_mock_calls(monkeypatch, make_pdf_docume
 
     assert third_response is None
     assert third_usage["cost"] == 0.0
+
+
+def test_fetch_prefers_task_specific_then_falls_back(make_pdf_document, tmp_path):
+    doc = make_pdf_document("fixture.pdf")
+    pdf_path = Path(doc.get_absolute_path())
+
+    mock_provider.reset()
+    _write_mock(pdf_path.with_name(f"{pdf_path.stem}.text.json"), {"response": {"value": "task"}})
+    _write_mock(pdf_path.with_name(f"{pdf_path.stem}.json"), {"response": {"value": "generic"}})
+
+    first_response, first_usage = mock_provider.fetch(doc, "text")
+    second_response, second_usage = mock_provider.fetch(doc, "text")
+
+    assert json.loads(first_response)["value"] == "task"
+    assert json.loads(second_response)["value"] == "generic"
+    assert first_usage["cost"] == 0.0
+    assert second_usage["cost"] == 0.0
+
+
+def test_fetch_numeric_usage_is_coerced(make_pdf_document):
+    doc = make_pdf_document("usage.pdf")
+    pdf_path = Path(doc.get_absolute_path())
+
+    mock_provider.reset()
+    _write_mock(pdf_path.with_name(f"{pdf_path.stem}.text.json"), {"response": {"value": "ok"}, "usage": 0.42})
+
+    response, usage = mock_provider.fetch(doc, "text")
+
+    assert json.loads(response)["value"] == "ok"
+    assert usage == {"cost": 0.42}
+
+
+def test_fetch_logs_context_mismatch(make_pdf_document, caplog):
+    doc = make_pdf_document("context.pdf")
+    pdf_path = Path(doc.get_absolute_path())
+
+    mock_provider.reset()
+    _write_mock(
+        pdf_path.with_name(f"{pdf_path.stem}.text.json"),
+        {"response": {"value": "ok"}, "meta": {"expected": {"words": 10}}},
+    )
+
+    caplog.set_level("INFO")
+    response, usage = mock_provider.fetch(doc, "text", context={"words": 20})
+
+    assert json.loads(response)["value"] == "ok"
+    assert usage["cost"] == 0.0
+    assert any("Mock metadata mismatch" in record.message for record in caplog.records)
+
+
+def test_fetch_handles_invalid_json(make_pdf_document, caplog):
+    doc = make_pdf_document("broken.pdf")
+    pdf_path = Path(doc.get_absolute_path())
+
+    mock_provider.reset()
+    broken_file = pdf_path.with_name(f"{pdf_path.stem}.text.json")
+    broken_file.write_text("{not-valid-json", encoding="utf-8")
+
+    caplog.set_level("WARNING")
+    response, usage = mock_provider.fetch(doc, "text")
+
+    assert response is None
+    assert usage == {"cost": 0.0}
+    assert any("Failed to load mock response" in record.message for record in caplog.records)

@@ -1,4 +1,6 @@
 import os
+import json
+import time
 import logging
 import traceback
 from autoPDFtagger.config import config
@@ -7,11 +9,12 @@ from autoPDFtagger import ai_tasks, mock_provider
 from autoPDFtagger.PDFDocument import PDFDocument
 
 class autoPDFtagger:
-    def __init__(self, ocr_runner=None):
+    def __init__(self, ocr_runner=None, ai_log_path=None):
         self.ai = None
         self.file_list = PDFList()
         PDFDocument.configure_ocr(ocr_runner)
         mock_provider.reset()
+        self._ai_response_log_path = ai_log_path
 
     # Add file to database
     def add_file(self, path: str, base_dir = None):
@@ -33,6 +36,26 @@ class autoPDFtagger:
             logging.info(f"... {document.file_name}")
             document.analyze_file()
 
+    def _log_ai_response(self, task, document, response_payload, usage):
+        if not self._ai_response_log_path:
+            return
+        entry = {
+            "timestamp": time.time(),
+            "task": task,
+            "document": document.get_absolute_path() if document else None,
+            "response": response_payload,
+            "usage": usage,
+        }
+        try:
+            log_dir = os.path.dirname(self._ai_response_log_path)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
+            with open(self._ai_response_log_path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(entry, ensure_ascii=False))
+                handle.write("\n")
+        except Exception as exc:
+            logging.warning("Failed to write AI response log '%s': %s", self._ai_response_log_path, exc)
+
     def ai_text_analysis(self):
         logging.info("Asking AI to analyze PDF-Text")
         cost = 0.0  # for monitoring
@@ -46,6 +69,7 @@ class autoPDFtagger:
             logging.info("... " + document.file_name)
             try:
                 response, usage = ai_tasks.analyze_text(document, ms, ml, thr)
+                self._log_ai_response("text", document, response, usage)
                 if response:
                     document.set_from_json(response)
                 cost += float(usage.get('cost', 0.0) or 0.0)
@@ -63,6 +87,7 @@ class autoPDFtagger:
         for document in self.file_list.pdf_documents.values():
             logging.info("... " + document.file_name)
             response, usage = ai_tasks.analyze_images(document, model)
+            self._log_ai_response("image", document, response, usage)
             if response:
                 document.set_from_json(response)
             costs += float(usage.get('cost', 0.0) or 0.0)
@@ -75,6 +100,7 @@ class autoPDFtagger:
         logging.info("Unique tags: " + str(unique_tags))
         model = config.get('AI', 'tag_model', fallback='')
         replacements, usage = ai_tasks.analyze_tags(unique_tags, model=model)
+        self._log_ai_response("tag", None, replacements, usage)
 
         logging.info("Applying replacements")
         self.file_list.apply_tag_replacements_to_all(replacements)

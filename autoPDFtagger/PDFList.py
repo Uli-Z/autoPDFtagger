@@ -6,6 +6,7 @@ from datetime import datetime
 import pprint
 import traceback
 import csv
+from pathlib import Path
 
 from autoPDFtagger.PDFDocument import PDFDocument
 
@@ -39,10 +40,14 @@ class PDFList:
 
     # Add single file (pdf, csv, json)
     def add_file(self, file_path, base_dir):
+        path_obj = Path(file_path)
         if file_path.endswith(".pdf"):
             pdf_document = PDFDocument(file_path, base_dir)
             self.add_pdf_document(pdf_document)
         elif file_path.endswith(".json"):
+            if self._is_mock_fixture(path_obj):
+                logging.debug("Skipping mock fixture JSON: %s", file_path)
+                return
             self.import_from_json_file(file_path)
         elif file_path.endswith(".csv"):
             self.import_from_csv_file(file_path)
@@ -210,6 +215,25 @@ class PDFList:
             logging.error(f"Error loading JSON-File: {e}")
             logging.error(traceback.format_exc())
             return []
+
+
+    @staticmethod
+    def _is_mock_fixture(path: Path) -> bool:
+        """Detect mock response fixture files (e.g. *.text.json, *.text.1.json)."""
+        suffixes = path.suffixes
+        if not suffixes or suffixes[-1] != ".json":
+            return False
+
+        mock_suffixes = {".text", ".image", ".tag"}
+
+        if len(suffixes) >= 2 and suffixes[-2] in mock_suffixes:
+            return True
+
+        if len(suffixes) >= 3 and suffixes[-3] in mock_suffixes:
+            index_suffix = suffixes[-2].lstrip(".")
+            return index_suffix.isdigit()
+
+        return False
 
 
     def create_PDFDocument_from_dict(self,data):

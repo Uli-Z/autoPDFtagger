@@ -159,3 +159,80 @@ def test_analyze_images_skips_without_model():
     doc = Doc()
     text, usage = ai_tasks.analyze_images(doc, model="")
     assert text is None and usage.get("cost", 1) == 0.0
+
+
+def test_json_guard_extracts_embedded_json():
+    payload = 'noise {"key": "value", "num": 1} trailing'
+    guarded = ai_tasks._json_guard(payload)
+    assert json.loads(guarded) == {"key": "value", "num": 1}
+
+
+def test_json_guard_returns_empty_object_for_invalid_text():
+    guarded = ai_tasks._json_guard("no braces here")
+    assert json.loads(guarded) == {}
+
+
+def test_select_images_limits_non_scanned_results(monkeypatch):
+    class Doc:
+        def __init__(self):
+            self.image_coverage = 10
+            self.images = [
+                [
+                    {"xref": 1, "original_width": 100, "original_height": 100},
+                    {"xref": 2, "original_width": 400, "original_height": 400},
+                ],
+                [
+                    {"xref": 3, "original_width": 50, "original_height": 50},
+                    {"xref": 4, "original_width": 600, "original_height": 100},
+                ],
+            ]
+            self.pages = []
+
+        def analyze_document_images(self):
+            pass
+
+        def get_png_image_base64_by_xref(self, xref):
+            return f"img-{xref}"
+
+        def to_api_json(self):
+            return "{}"
+
+    doc = Doc()
+    images = ai_tasks._select_images_for_analysis(doc)
+    assert images == ["img-2", "img-4", "img-1"]
+
+
+def test_select_images_scanned_only_returns_existing_refs(monkeypatch):
+    class Doc:
+        def __init__(self):
+            self.image_coverage = 100
+            self.pages = [
+                {"max_img_xref": None},
+                {"max_img_xref": 7},
+                {"max_img_xref": 9},
+            ]
+            self.images = []
+
+        def analyze_document_images(self):
+            pass
+
+        def get_png_image_base64_by_xref(self, xref):
+            return f"page-{xref}"
+
+        def to_api_json(self):
+            return "{}"
+
+    doc = Doc()
+    images = ai_tasks._select_images_for_analysis(doc)
+    assert images == ["page-7"]
+
+
+def test_analyze_images_returns_none_when_no_images(monkeypatch):
+    class Doc:
+        def __init__(self):
+            self.file_name = "empty.pdf"
+
+    monkeypatch.setattr("autoPDFtagger.ai_tasks._select_images_for_analysis", lambda _doc: [])
+    response, usage = ai_tasks.analyze_images(Doc(), model="vision")
+    assert response is None
+    assert usage == {"cost": 0.0}

@@ -1,8 +1,11 @@
+import json
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from autoPDFtagger import mock_provider
 from autoPDFtagger.autoPDFtagger import autoPDFtagger
 
 
@@ -224,3 +227,80 @@ def test_create_confidence_histogram_empty_list(monkeypatch):
     histogram = tagger.create_confidence_histogram(tagger.file_list)
 
     assert histogram.strip() == "(no documents)"
+
+
+def test_auto_pdf_tagger_resets_mock_provider(make_pdf_document):
+    doc = make_pdf_document("reset.pdf")
+    pdf_path = Path(doc.get_absolute_path())
+
+    mock_provider.reset()
+    (pdf_path.with_name(f"{pdf_path.stem}.text.json")).write_text(
+        json.dumps({"response": {"call": "first"}}),
+        encoding="utf-8",
+    )
+    (pdf_path.with_name(f"{pdf_path.stem}.text.1.json")).write_text(
+        json.dumps({"response": {"call": "second"}}),
+        encoding="utf-8",
+    )
+
+    first, _ = mock_provider.fetch(doc, "text")
+    second, _ = mock_provider.fetch(doc, "text")
+    assert json.loads(first)["call"] == "first"
+    assert json.loads(second)["call"] == "second"
+
+    autoPDFtagger()
+    again, _ = mock_provider.fetch(doc, "text")
+    assert json.loads(again)["call"] == "first"
+
+
+def test_ai_text_analysis_uses_ocr_output(monkeypatch, make_pdf_document):
+    class Runner:
+        def __init__(self):
+            self.calls = []
+
+        def extract_text_from_page(self, page):
+            self.calls.append(page.index)
+            return f"ocr{page.index}"
+
+    runner = Runner()
+    tagger = autoPDFtagger(ocr_runner=runner)
+
+    class FakePage:
+        def __init__(self, index):
+            self.index = index
+
+        def get_text(self, mode):
+            assert mode == "text"
+            return ""
+
+    class FakeDoc:
+        def __init__(self):
+            self.closed = False
+            self.pages = [FakePage(0), FakePage(1)]
+
+        def __len__(self):
+            return len(self.pages)
+
+        def __getitem__(self, index):
+            return self.pages[index]
+
+        def close(self):
+            self.closed = True
+
+    fake_doc = FakeDoc()
+    monkeypatch.setattr("autoPDFtagger.PDFDocument.fitz.open", lambda *_: fake_doc)
+
+    pdf_doc = make_pdf_document("needs_ocr.pdf")
+    tagger.file_list.pdf_documents = {pdf_doc.get_absolute_path(): pdf_doc}
+
+    captured = []
+
+    def fake_analyze_text(document, ms, ml, thr):
+        captured.append(document.get_pdf_text())
+        return "{}", {"cost": 0.0}
+
+    monkeypatch.setattr("autoPDFtagger.ai_tasks.analyze_text", fake_analyze_text)
+    tagger.ai_text_analysis()
+
+    assert captured == ["ocr0 ocr1"]
+    assert runner.calls == [0, 1]

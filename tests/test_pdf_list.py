@@ -186,3 +186,21 @@ def test_export_to_folder_uses_new_names(tmp_path):
 
     assert str(export_root / "custom/dir/renamed.pdf") in saved
     assert str(export_root / "archive/year/two.pdf") in saved
+
+
+def test_add_pdf_documents_from_folder_skips_mock_fixtures(tmp_path, caplog):
+    base = tmp_path / "docs"
+    base.mkdir()
+    pdf_path = base / "scan.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%EOF\n")
+
+    (base / "scan.text.json").write_text(json.dumps({"response": {"title": "t"}}), encoding="utf-8")
+    (base / "scan.image.0.json").write_text(json.dumps({"response": {"title": "img"}}), encoding="utf-8")
+
+    pdf_list = PDFList()
+
+    caplog.set_level("ERROR")
+    pdf_list.add_pdf_documents_from_folder(str(base), str(base))
+
+    assert list(pdf_list.pdf_documents.keys()) == [str(pdf_path)]
+    assert not any("Could not import file from JSON-File" in record.message for record in caplog.records)
