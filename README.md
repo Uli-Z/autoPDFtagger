@@ -68,8 +68,8 @@ At the moment, there exists a functional prototype in the form of a terminal pro
 
 ## Caution and Considerations / Disclaimer
 
-- **Data Privacy**: PDF content is transmitted to OpenAI servers for analysis. While OpenAI claims non-use of API inputs for training, sensitivity in handling private documents is advised.
-- **Cost Control**: Be aware of the costs associated with OpenAI API usage, which is based on request volume. Analysis of a single page costs around 0.05 $.
+- **Data Privacy**: PDF content is transmitted to AI provider servers for analysis. While AI providers claim non-use of API inputs for training, sensitivity in handling private documents is advised. Alternatively, using a local LLM can mitigate these concerns as data remains on your local machine.
+- **Cost Control**: Be aware of the costs associated with API usage. Based on an analysis in 10/2025 with a mix of documents, the costs are roughly as follows (using a model like GPT-5-nano): Text analysis of a document costs around 0.001 $, and image analysis around 0.001 $. These costs can vary depending on the document size and complexity.
 - **Accuracy and Reliability**: This initial version is a proof-of-concept and may have limitations. It's designed to create copies rather than alter original files.
 - **Metadata Editing**: Altering metadata could potentially invalidate certain documents. Be careful with digital signed documents.
 
@@ -220,8 +220,7 @@ $ autoPDFtagger pdf_archive -ftic -e new_archive
 - The analysis of files includes not just the filename but also the local file path relative to a base directory (Base-Directory). By default, when folders are specified, the respective folder is set as the base directory for all files down to the subfolders. In some cases, it may be sensible to manually set a different base directory.
 - Metadata management uses a "confidence logic". This means data is only updated if the (estimated) certainty/confidence is higher than the existing data. This aims for incremental improvement of information but can sometimes lead to inconsistent results.
 - Keyword **confidence-index**: Within the program, it's possible to filter the database by this value. What's the rationale behind it? Primarily, it's a quickly improvised solution to enable sorting of database entries by the quality of their metadata. The AI itself assesses how well it can answer the given questions based on the available information and sets a confidence level. There are individual confidence values for the title, summary, and creation date. To consolidate these into a single value, the average is initially calculated. However, since the title and creation date are particularly critical, the minimum value out of the average, title, and creation date is used
-- The **text analysis** of documents in the current configuration is carried out with the help of gpt-3.5-turbo-1106. With a context window of 16k, even larger documents can be analyzed at an affordable price of under $0.01. In my tests, the quality has proven to be sufficient. Only for very short documents does gpt-4 seem to bring a significant benefit. Therefore, the program automatically uses gpt-4 for short texts (~100 words).
-- **Image analysis** is the most time-consuming and expensive process, which is why the algorithm is also adjusted here. At the time of creation, only the gpt-4-vision-preview model exists. The current approach is to analyze only the first page for scanned documents. Subsequent pages are only analyzed if the relevant metadata could not be determined with sufficient confidence. A similar logic exists for digitally created PDFs, where contained images are only analyzed until the information quality is sufficient.
+- The **text and image analysis** of documents can be performed by various models. As of 10/2025, a model like GPT-5-nano provides a good balance between cost and quality, with costs around 0.001 $ per document for both text and image analysis. The tool is designed to be flexible, allowing the use of different models to optimize for cost or quality.
 
 
 ## Code Structure
