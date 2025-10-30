@@ -76,40 +76,62 @@ class JobManager:
                 spinner = "|/-\\"[self._spinner_index % 4]
                 self._spinner_index += 1
 
-                def render_bar(metrics, width=20):
-                    done_count = metrics["d"]
-                    running_count = metrics["r"]
-                    failed_count = metrics["f"]
-                    pending_count = metrics["p"]
-                    total = max(1, done_count + running_count + failed_count + pending_count)
-                    done_w = int(width * done_count / total)
-                    run_w = int(width * running_count / total)
-                    fail_w = int(width * failed_count / total)
-                    remaining = width - done_w - run_w - fail_w
-                    return "[" + "#" * done_w + "+" * run_w + "!" * fail_w + "." * max(0, remaining) + "]"
+                def render_bar(metrics, width=24):
+                    total = max(1, sum(metrics.values()))
+                    remaining = width
 
-                status_line = (
-                    f"{spinner} Jobs P:{pending} R:{running} D:{done} F:{failed} | "
-                    f"OCR {render_bar(kinds['ocr'])} | TEXT {render_bar(kinds['text'])} | IMG {render_bar(kinds['image'])}"
-                )
+                    def take(count: int) -> int:
+                        nonlocal remaining
+                        if count <= 0 or remaining <= 0:
+                            return 0
+                        portion = int(round(width * count / total))
+                        if portion == 0:
+                            portion = 1
+                        portion = min(portion, remaining)
+                        remaining -= portion
+                        return portion
+
+                    done_w = take(metrics["d"])
+                    run_w = take(metrics["r"])
+                    fail_w = take(metrics["f"])
+                    pending_w = max(0, remaining)
+                    return "[" + "=" * done_w + ">" * run_w + "!" * fail_w + "." * pending_w + "]"
+
+                def render_line(label: str, metrics: Dict[str, int], show_spinner: bool = False) -> str:
+                    prefix = f"{spinner} " if show_spinner else "  "
+                    bar = render_bar(metrics)
+                    return (
+                        f"{prefix}{label:<5} {bar} "
+                        f"pending {metrics['p']} · running {metrics['r']} · "
+                        f"done {metrics['d']} · failed {metrics['f']}"
+                    )
+
+                ordered_kinds = [
+                    ("OCR", "OCR", kinds["ocr"]),
+                    ("AI-Text", "AI-Text-Analysis", kinds["text"]),
+                    ("AI-Image", "AI-Image-Analysis", kinds["image"]),
+                ]
+                active = [(short, full, metrics) for short, full, metrics in ordered_kinds if metrics["p"] or metrics["r"]]
+
+                status_lines = []
+                for idx, (short_label, full_label, metrics) in enumerate(active):
+                    status_lines.append(
+                        render_line(full_label, metrics, show_spinner=(idx == 0))
+                    )
+
+                status_text = "\n".join(status_lines)
 
                 if board_state.enabled:
-                    board_state.update(status_line)
+                    if status_lines:
+                        board_state.update(status_text)
+                    else:
+                        board_state.clear()
                 else:
                     now = time.time()
                     if now - self._last_log_time >= self.status_interval_sec:
-                        logging.info(
-                            "Jobs: pending=%d running=%d done=%d failed=%d | "
-                            "OCR(p/r/d/f=%d/%d/%d/%d) | TEXT(%d/%d/%d/%d) | IMAGE(%d/%d/%d/%d)",
-                            pending,
-                            running,
-                            done,
-                            failed,
-                            kinds["ocr"]["p"], kinds["ocr"]["r"], kinds["ocr"]["d"], kinds["ocr"]["f"],
-                            kinds["text"]["p"], kinds["text"]["r"], kinds["text"]["d"], kinds["text"]["f"],
-                            kinds["image"]["p"], kinds["image"]["r"], kinds["image"]["d"], kinds["image"]["f"],
-                        )
-                        self._last_log_time = now
+                        if status_lines:
+                            logging.info("Job status:\n%s", status_text)
+                            self._last_log_time = now
             except Exception:
                 # Keep status thread robust
                 pass

@@ -55,4 +55,4 @@ def test_parallel_pipeline_orders_ocr_before_text(monkeypatch, make_pdf_document
         assert o_idx < t_idx
 
     # status lines should appear in fallback logging mode
-    assert any("Jobs: pending=" in rec.message for rec in caplog.records)
+    assert any("Job status:" in rec.message for rec in caplog.records)

@@ -132,14 +132,15 @@ def test_fetch_handles_invalid_json(make_pdf_document, caplog):
     assert usage == {"cost": 0.0}
 
 
-def test_fetch_honors_test_sleep(monkeypatch, make_pdf_document):
+def test_fetch_honors_test_sleep(monkeypatch, make_pdf_document, caplog):
     from autoPDFtagger.config import config
     from autoPDFtagger import mock_provider
     doc = make_pdf_document("latency.pdf")
     # inject a small artificial latency
     config.read_dict({"AI": {"test_mock_sleep_ms": "120"}})
+    caplog.set_level("INFO")
     start = time.perf_counter()
     response, usage = mock_provider.fetch(doc, "text")
     elapsed = time.perf_counter() - start
     assert elapsed >= 0.1
-    assert any("Failed to load mock response" in record.message for record in caplog.records)
+    assert any("Mock response not found" in record.message for record in caplog.records)

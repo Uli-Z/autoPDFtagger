@@ -38,4 +38,4 @@ def test_job_manager_logs_status(caplog):
         board_state.enabled = prev_enabled
         board_state.current = prev_current
     # at least one periodic summary line
-    assert any("Jobs: pending=" in rec.message for rec in caplog.records)
+    assert any("Job status:" in rec.message for rec in caplog.records)

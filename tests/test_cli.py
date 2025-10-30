@@ -79,8 +79,14 @@ class TrackingArchive:
     def print_file_list(self):
         self.calls.append("print_file_list")
 
+    def run_jobs_parallel(self, *, do_text, do_image, enable_ocr):
+        self.calls.append((
+            "run_jobs_parallel",
+            {"do_text": do_text, "do_image": do_image, "enable_ocr": enable_ocr},
+        ))
 
-def test_cli_requires_output_option(tmp_path, monkeypatch, caplog):
+
+def test_cli_requires_output_option(tmp_path, monkeypatch, caplog, capsys):
     config_path = tmp_path / "config.ini"
     config_path.write_text(
         "[DEFAULT]\nlanguage=English\n[AI]\ntext_model_short=stub/short\ntext_model_long=stub/long\ntext_threshold_words=100\nimage_model=stub/vision\ntag_model=stub/tagger\n",
@@ -142,9 +148,10 @@ def test_cli_requires_output_option(tmp_path, monkeypatch, caplog):
     )
 
     cli_module.main()
+    captured = capsys.readouterr()
 
     assert not any(record.levelname == "INFO" and "Doing basic file-analysis" in record.message for record in caplog.records)
-    assert any("No output option is set. Skipping text analysis." in record.message for record in caplog.records)
+    assert "Skipping AI analyses" in captured.err
 
     created_instances = StubArchive.instances
     assert created_instances, "stub archive was not instantiated"
@@ -201,8 +208,10 @@ def test_cli_executes_requested_actions(tmp_path, monkeypatch, caplog):
     assert ("keep_incomplete", 8) in archive.calls
     assert ("keep_complete", 4) in archive.calls
     assert "file_analysis" in archive.calls
-    assert "ai_text_analysis" in archive.calls
-    assert "ai_image_analysis" in archive.calls
+    run_calls = [call for call in archive.calls if call[0] == "run_jobs_parallel"]
+    assert run_calls
+    assert run_calls[-1][1]["do_text"] is True
+    assert run_calls[-1][1]["do_image"] is True
     assert "ai_tag_analysis" in archive.calls
     assert ("json_file", str(json_path)) in archive.calls
     assert ("csv_file", str(csv_path)) in archive.calls
