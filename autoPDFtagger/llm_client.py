@@ -96,10 +96,20 @@ def run_chat(
 
     _ensure_env_for_provider(model)
 
+    effective_temperature = float(temperature)
+    model_name = model.lower()
+    if "gpt-5" in model_name and abs(effective_temperature - 1.0) > 1e-6:
+        logging.debug(
+            "Clamping temperature to 1.0 for model '%s' (requested %.3f)",
+            model,
+            effective_temperature,
+        )
+        effective_temperature = 1.0
+
     kwargs: Dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "temperature": temperature,
+        "temperature": effective_temperature,
     }
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}

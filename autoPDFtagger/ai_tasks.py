@@ -89,7 +89,17 @@ def analyze_text(
     ]
 
     try:
-        answer, usage = run_chat(chosen_model, messages, json_mode=True)
+        text_temperature = float(config.get("AI", "text_temperature", fallback="0.3"))
+    except Exception:
+        text_temperature = 0.3
+
+    try:
+        answer, usage = run_chat(
+            chosen_model,
+            messages,
+            json_mode=True,
+            temperature=text_temperature,
+        )
         return _json_guard(answer), usage
     except Exception as e:
         logging.error(f"Text analysis failed: {e}")

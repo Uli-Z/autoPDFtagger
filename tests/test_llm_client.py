@@ -38,6 +38,29 @@ def test_run_chat_computes_cost(monkeypatch):
     assert captured["model"] == "openai/gpt-4o-mini"
 
 
+def test_run_chat_clamps_temperature_for_gpt5(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+
+    calls = {}
+
+    def fake_completion(**kwargs):
+        calls.update(kwargs)
+        return {
+            "choices": [{"message": {"content": "{}"}}],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+
+    monkeypatch.setattr(llm_client, "completion", fake_completion)
+
+    llm_client.run_chat(
+        model="openai/gpt-5-nano",
+        messages=[{"role": "user", "content": "hi"}],
+        temperature=0.2,
+    )
+
+    assert calls.get("temperature") == 1.0
+
+
 def test_run_chat_missing_env_raises(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(llm_client, "completion", lambda **kwargs: kwargs)
@@ -69,4 +92,3 @@ def test_run_vision_builds_image_parts(monkeypatch):
     parts = msgs[0]["content"]
     assert parts[0]["type"] == "text"
     assert parts[1]["type"] == "image_url" and parts[2]["type"] == "image_url"
-
