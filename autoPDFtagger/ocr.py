@@ -3,6 +3,9 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from typing import Optional
+import hashlib
+
+from autoPDFtagger import cache
 
 
 def _normalize_languages(value: str) -> str:
@@ -45,6 +48,18 @@ class TesseractRunner:
         try:
             pix = page.get_pixmap(dpi=self.dpi)
             image_bytes = pix.tobytes("png")
+            # Cache lookup based on Tesseract settings and page image digest
+            try:
+                img_hash = hashlib.sha256(image_bytes).hexdigest()
+                key = f"v1|langs={self.languages}|dpi={self.dpi}|img={img_hash}"
+                cached = cache.get("ocr", key)
+                if cached and isinstance(cached, dict):
+                    text = cached.get("text", "")
+                    if text:
+                        logging.info("OCR cache hit (dpi=%s, langs=%s)", self.dpi, self.languages)
+                        return text
+            except Exception:
+                pass
             command = [
                 self.binary_path,
                 "stdin",
@@ -63,7 +78,12 @@ class TesseractRunner:
                 stderr = result.stderr.decode("utf-8", errors="ignore").strip()
                 logging.warning("Tesseract OCR failed (code %s): %s", result.returncode, stderr)
                 return ""
-            return result.stdout.decode("utf-8", errors="ignore")
+            text = result.stdout.decode("utf-8", errors="ignore")
+            try:
+                cache.set("ocr", key, {"text": text})
+            except Exception:
+                pass
+            return text
         except FileNotFoundError:
             logging.error("Tesseract binary disappeared during execution.")
         except Exception as exc:  # pragma: no cover - defensive

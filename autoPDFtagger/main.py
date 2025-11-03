@@ -5,6 +5,7 @@ import os
 import sys
 
 from autoPDFtagger.config import config
+from autoPDFtagger import cache
 from autoPDFtagger import ocr
 from autoPDFtagger.logging_utils import configure_logging
 
@@ -30,6 +31,7 @@ def main():
     parser.add_argument("--no-ocr", dest="ocr", action="store_false", help="Force-disable OCR regardless of configuration")
     parser.add_argument("--ocr-languages", help="Override Tesseract language codes (e.g. 'deu+eng')")
     parser.add_argument("--debug-ai-log", help="Append raw AI JSON responses to the given log file", default=None)
+    parser.add_argument("--no-cache", action="store_true", help="Disable on-disk cache for OCR and AI calls")
     parser.set_defaults(ocr=None)
 
     args = parser.parse_args()
@@ -55,6 +57,24 @@ def main():
         fmt='%(asctime)s - %(levelname)s ::: %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
     )
+
+    # Configure cache from config with CLI override
+    try:
+        cfg_enabled = config.get("CACHE", "enabled", fallback="true").strip().lower()
+        enabled = cfg_enabled in {"1", "true", "yes", "on"}
+    except Exception:
+        enabled = True
+    try:
+        ttl_seconds = int(config.get("CACHE", "ttl_seconds", fallback=str(24 * 60 * 60)))
+    except Exception:
+        ttl_seconds = 24 * 60 * 60
+    try:
+        cache_dir = config.get("CACHE", "dir", fallback="").strip() or None
+    except Exception:
+        cache_dir = None
+    # CLI --no-cache disables regardless of config
+    cache.configure(enabled=(enabled and not args.no_cache), ttl_seconds=ttl_seconds, base_dir=cache_dir)
+    logging.debug("Cache configured: enabled=%s, ttl=%ss, dir=%s", str(enabled and not args.no_cache), ttl_seconds, cache_dir or "~/.autoPDFtagger/config")
 
     archive = autoPDFtagger(ocr_runner=ocr_setup.runner, ai_log_path=args.debug_ai_log)
 

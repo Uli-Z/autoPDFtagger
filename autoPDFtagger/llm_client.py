@@ -1,7 +1,10 @@
 import os
+import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 from autoPDFtagger.config import config as app_config
+from autoPDFtagger import cache
+import hashlib
 
 # LiteLLM is optional at import time for tests; we stub usage when patched
 try:
@@ -142,6 +145,32 @@ def run_chat(
 
     _ensure_env_for_provider(model)
 
+    # Cache lookup
+    try:
+        norm_messages: List[Dict[str, Any]] = []
+        for m in messages:
+            role = m.get("role")
+            content = m.get("content")
+            norm_messages.append({"role": role, "content": content})
+        key_obj = {
+            "v": 1,
+            "type": "chat",
+            "model": model,
+            "json_mode": bool(json_mode),
+            "has_schema": bool(schema),
+            "temperature": float(temperature) if temperature is not None else None,
+            "max_tokens": int(max_tokens) if max_tokens is not None else None,
+            "messages": norm_messages,
+        }
+        key_str = json.dumps(key_obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        key = hashlib.sha256(key_str.encode("utf-8")).hexdigest()
+        cached = cache.get("chat", key)
+        if cached and isinstance(cached, dict) and "text" in cached:
+            logging.info("Chat cache hit (model=%s)", model)
+            return str(cached.get("text") or ""), dict(cached.get("usage") or {"cost": 0.0})
+    except Exception:
+        pass
+
     effective_temperature = float(temperature)
     model_name = model.lower()
     if "gpt-5" in model_name and abs(effective_temperature - 1.0) > 1e-6:
@@ -189,6 +218,10 @@ def run_chat(
     if cost is None:
         cost = _compute_cost(model, usage)
     usage["cost"] = cost
+    try:
+        cache.set("chat", key, {"text": text or "", "usage": usage})
+    except Exception:
+        pass
     return text or "", usage
 
 
@@ -208,6 +241,27 @@ def run_vision(
         raise RuntimeError("litellm not installed; cannot call run_vision without monkeypatching.")
 
     _ensure_env_for_provider(model)
+
+    # Cache lookup based on prompt + image hashes
+    try:
+        image_hashes = [hashlib.sha256((b64 or "").encode("utf-8")).hexdigest() for b64 in images_b64]
+        key_obj = {
+            "v": 1,
+            "type": "vision",
+            "model": model,
+            "temperature": float(temperature) if temperature is not None else None,
+            "max_tokens": int(max_tokens) if max_tokens is not None else None,
+            "prompt": prompt,
+            "images": image_hashes,
+        }
+        key_str = json.dumps(key_obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        key = hashlib.sha256(key_str.encode("utf-8")).hexdigest()
+        cached = cache.get("vision", key)
+        if cached and isinstance(cached, dict) and "text" in cached:
+            logging.info("Vision cache hit (model=%s, images=%d)", model, len(images_b64))
+            return str(cached.get("text") or ""), dict(cached.get("usage") or {"cost": 0.0})
+    except Exception:
+        pass
 
     # Construct OpenAI-style content parts
     content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
@@ -240,6 +294,10 @@ def run_vision(
     if cost is None:
         cost = _compute_cost(model, usage)
     usage["cost"] = cost
+    try:
+        cache.set("vision", key, {"text": text or "", "usage": usage})
+    except Exception:
+        pass
     return text or "", usage
 def _rates_from_config(model: str) -> Optional[Tuple[float, float]]:
     """Try to read pricing from config [PRICING] section.
