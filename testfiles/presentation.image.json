@@ -1,0 +1,93 @@
+{
+  "response": [
+    {
+      "summary": "Displays the company's key financial figures. It lists Sales of $27,000,000, Gross Profit of $12,000,000, Net Income of $5,000,000, and EBITDA of $8,500,000. The data highlights profitability and cash flow levels for the period. The slide appears to be part of a formal company presentation.",
+      "summary_confidence": 8,
+      "title": "Key Financial Figures",
+      "title_confidence": 8,
+      "creation_date": null,
+      "creation_date_confidence": 0,
+      "creator": "Henry Smith (CEO)",
+      "creator_confidence": 6,
+      "tags": [
+        "financial metrics",
+        "sales",
+        "net income",
+        "EBITDA",
+        "profitability",
+        "slide deck"
+      ],
+      "tags_confidence": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "importance": 7,
+      "importance_confidence": 6
+    },
+    {
+      "summary": "A collage of employees celebrating a corporate event. The photos show groups of colleagues smiling, socializing, and toasting with drinks. The montage conveys a positive workplace culture and team camaraderie. It appears to be part of internal communications or a company celebration recap.",
+      "summary_confidence": 7,
+      "title": "Employee Celebration Collage",
+      "title_confidence": 8,
+      "creation_date": null,
+      "creation_date_confidence": 0,
+      "creator": "Unknown",
+      "creator_confidence": 4,
+      "tags": [
+        "team photos",
+        "corporate event",
+        "celebration",
+        "group portrait",
+        "workplace culture"
+      ],
+      "tags_confidence": [
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "importance": 4,
+      "importance_confidence": 6
+    },
+    {
+      "summary": "Shows the Year-End Review 1999 cover page, with decorative framing and bold typography. The page appears to be part of a corporate presentation led by Henry Smith, the CEO. It suggests a formal annual review and summary of the year's performance. It functions as an introductory or title page to a broader performance report.",
+      "summary_confidence": 7,
+      "title": "Year-End Review 1999",
+      "title_confidence": 8,
+      "creation_date": 1999,
+      "creation_date_confidence": 6,
+      "creator": "Henry Smith (CEO)",
+      "creator_confidence": 7,
+      "tags": [
+        "year-end review",
+        "presentation",
+        "CEO",
+        "corporate"
+      ],
+      "tags_confidence": [
+        7,
+        7,
+        7,
+        7
+      ],
+      "importance": 7,
+      "importance_confidence": 6
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1510,
+    "completion_tokens": 4634,
+    "total_tokens": 6144,
+    "cost": 0.0
+  },
+  "meta": {
+    "expected": {
+      "image_count": 3
+    }
+  }
+}
