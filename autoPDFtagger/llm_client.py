@@ -40,7 +40,10 @@ def _compute_cost(model: str, usage: Dict[str, Any]) -> float:
     def _lookup(name: str) -> Optional[Tuple[float, float]]:
         return _PRICE_MAP.get(name)
 
-    rates = _lookup(model)
+    # Prefer config-defined rates if available
+    rates = _rates_from_config(model)
+    if not rates:
+        rates = _lookup(model)
     if not rates:
         info = infer_provider(model)
         base = model.split('/')[-1].lower()
@@ -238,3 +241,39 @@ def run_vision(
         cost = _compute_cost(model, usage)
     usage["cost"] = cost
     return text or "", usage
+def _rates_from_config(model: str) -> Optional[Tuple[float, float]]:
+    """Try to read pricing from config [PRICING] section.
+
+    Expected keys (any one variant):
+      - "{model}.input_per_1k" and "{model}.output_per_1k" (exact model string)
+      - "{provider}/{base}.input_per_1k" and "{provider}/{base}.output_per_1k"
+    Returns (input_rate, output_rate) in $/1k tokens, or None if not present.
+    """
+    try:
+        if not app_config.has_section("PRICING"):
+            return None
+    except Exception:
+        return None
+
+    def _get_pair(prefix: str) -> Optional[Tuple[float, float]]:
+        try:
+            i = app_config.get("PRICING", f"{prefix}.input_per_1k", fallback=None)
+            o = app_config.get("PRICING", f"{prefix}.output_per_1k", fallback=None)
+            if i is None or o is None:
+                return None
+            return float(i), float(o)
+        except Exception:
+            return None
+
+    # 1) Exact model key
+    rates = _get_pair(model)
+    if rates:
+        return rates
+
+    # 2) Provider + base name
+    info = infer_provider(model)
+    base = model.split('/')[-1]
+    rates = _get_pair(f"{info['provider']}/{base}")
+    if rates:
+        return rates
+    return None
