@@ -17,6 +17,9 @@ _PRICE_MAP: Dict[str, Tuple[float, float]] = {
     "openai/gpt-4o": (0.005, 0.015),
     "openai/gpt-4o-mini": (0.0005, 0.0015),
     "openai/gpt-3.5-turbo-1106": (0.001, 0.002),
+    # Common dated aliases mapped to the nearest known rate
+    "openai/gpt-4o-2024-08-06": (0.005, 0.015),
+    "openai/gpt-4o-mini-2024-07-18": (0.0005, 0.0015),
 }
 
 
@@ -32,13 +35,26 @@ def infer_provider(model: str) -> Dict[str, str]:
 
 
 def _compute_cost(model: str, usage: Dict[str, Any]) -> float:
-    rates = _PRICE_MAP.get(model)
+    def _lookup(name: str) -> Optional[Tuple[float, float]]:
+        return _PRICE_MAP.get(name)
+
+    rates = _lookup(model)
     if not rates:
-        # try by provider family
         info = infer_provider(model)
-        key = f"{info['provider']}/{model.split('/')[-1]}"
-        rates = _PRICE_MAP.get(key)
+        base = model.split('/')[-1].lower()
+        # direct provider/key lookup
+        rates = _lookup(f"{info['provider']}/{base}")
+        if not rates and info["provider"] == "openai":
+            # Fuzzy mapping for common OpenAI variants with date suffixes
+            if "gpt-4o-mini" in base:
+                rates = _lookup("openai/gpt-4o-mini")
+            elif "gpt-4o" in base:
+                rates = _lookup("openai/gpt-4o")
+            elif "gpt-3.5-turbo" in base:
+                # map generic 3.5-turbo to a known 3.5 spec
+                rates = _lookup("openai/gpt-3.5-turbo-1106")
     if not rates:
+        logging.debug("Cost estimation: unknown rates for model '%s' (usage=%s)", model, usage)
         return 0.0
     prompt = int(usage.get("prompt_tokens", 0) or 0)
     completion_tokens = int(usage.get("completion_tokens", 0) or 0)
