@@ -167,7 +167,10 @@ def run_chat(
         cached = cache.get("chat", key)
         if cached and isinstance(cached, dict) and "text" in cached:
             logging.info("Chat cache hit (model=%s)", model)
-            return str(cached.get("text") or ""), dict(cached.get("usage") or {"cost": 0.0})
+            prev_usage = dict(cached.get("usage") or {})
+            saved = float(prev_usage.get("cost", 0.0) or 0.0)
+            usage = {"cost": 0.0, "saved_cost": saved, "cache_hit": True}
+            return str(cached.get("text") or ""), usage
     except Exception:
         pass
 
@@ -218,6 +221,8 @@ def run_chat(
     if cost is None:
         cost = _compute_cost(model, usage)
     usage["cost"] = cost
+    usage["saved_cost"] = 0.0
+    usage["cache_hit"] = False
     try:
         cache.set("chat", key, {"text": text or "", "usage": usage})
     except Exception:
@@ -259,7 +264,10 @@ def run_vision(
         cached = cache.get("vision", key)
         if cached and isinstance(cached, dict) and "text" in cached:
             logging.info("Vision cache hit (model=%s, images=%d)", model, len(images_b64))
-            return str(cached.get("text") or ""), dict(cached.get("usage") or {"cost": 0.0})
+            prev_usage = dict(cached.get("usage") or {})
+            saved = float(prev_usage.get("cost", 0.0) or 0.0)
+            usage = {"cost": 0.0, "saved_cost": saved, "cache_hit": True}
+            return str(cached.get("text") or ""), usage
     except Exception:
         pass
 
@@ -294,6 +302,8 @@ def run_vision(
     if cost is None:
         cost = _compute_cost(model, usage)
     usage["cost"] = cost
+    usage["saved_cost"] = 0.0
+    usage["cache_hit"] = False
     try:
         cache.set("vision", key, {"text": text or "", "usage": usage})
     except Exception:

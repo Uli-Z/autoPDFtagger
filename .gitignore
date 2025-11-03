@@ -7,3 +7,12 @@ dist/
 build/
 *.egg-info/
 *.egg
+.venv/
+*.pyc
+*.pyo
+__pycache__/
+*.swp
+*.swo
+*.DS_Store
+.env
+.env.*
