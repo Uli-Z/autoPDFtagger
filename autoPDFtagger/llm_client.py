@@ -5,8 +5,10 @@ from autoPDFtagger.config import config as app_config
 
 # LiteLLM is optional at import time for tests; we stub usage when patched
 try:
-    from litellm import completion
+    import litellm  # type: ignore
+    from litellm import completion  # type: ignore
 except Exception:  # pragma: no cover - tests will monkeypatch call sites
+    litellm = None  # type: ignore
     completion = None  # type: ignore
 
 
@@ -59,6 +61,31 @@ def _compute_cost(model: str, usage: Dict[str, Any]) -> float:
     prompt = int(usage.get("prompt_tokens", 0) or 0)
     completion_tokens = int(usage.get("completion_tokens", 0) or 0)
     return prompt * rates[0] / 1000.0 + completion_tokens * rates[1] / 1000.0
+
+
+def _litellm_cost(resp: Any) -> Optional[float]:
+    """Try to compute cost using LiteLLM's built-in helpers when available.
+
+    Returns a float when successful, or None to indicate fallback should be used.
+    """
+    try:
+        if litellm is None:
+            return None
+        # Newer LiteLLM versions expose completion_cost(response)
+        fn = getattr(litellm, "completion_cost", None)
+        if callable(fn):
+            return float(fn(resp))
+        # Try a few common historical helper names for compatibility
+        for name in ("calculate_cost", "response_cost", "cost_per_response"):
+            helper = getattr(litellm, name, None)
+            if callable(helper):
+                try:
+                    return float(helper(resp))
+                except Exception:
+                    continue
+    except Exception:
+        return None
+    return None
 
 
 def _ensure_env_for_provider(model: str) -> None:
@@ -154,8 +181,11 @@ def run_chat(
         except Exception:
             # best-effort
             usage = {k: raw_usage.get(k) for k in ("prompt_tokens", "completion_tokens", "total_tokens") if k in raw_usage}
-    # cost estimation
-    usage["cost"] = _compute_cost(model, usage)
+    # cost estimation: prefer LiteLLM helper if available
+    cost = _litellm_cost(resp)
+    if cost is None:
+        cost = _compute_cost(model, usage)
+    usage["cost"] = cost
     return text or "", usage
 
 
@@ -203,5 +233,8 @@ def run_vision(
             "completion_tokens": raw_usage.get("completion_tokens", 0),
             "total_tokens": raw_usage.get("total_tokens", 0),
         }
-    usage["cost"] = _compute_cost(model, usage)
+    cost = _litellm_cost(resp)
+    if cost is None:
+        cost = _compute_cost(model, usage)
+    usage["cost"] = cost
     return text or "", usage
