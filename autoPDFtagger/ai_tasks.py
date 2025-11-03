@@ -1,5 +1,6 @@
 import json
 import logging
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from autoPDFtagger.PDFDocument import PDFDocument
@@ -106,36 +107,171 @@ def analyze_text(
         return None, {"cost": 0.0}
 
 
-def _select_images_for_analysis(doc: PDFDocument) -> List[str]:
-    images: List[str] = []
-    try:
-        doc.analyze_document_images()
-        if doc.image_coverage is None:
-            return images
+@dataclass
+class ImageCandidate:
+    kind: str  # 'xref' or 'page'
+    page_index: int
+    xref: Optional[int]
+    area_ratio: float
+    is_scan: bool
+    words_count: int
+    score: float
 
-        if doc.image_coverage < 100:
-            # Non-scanned: pick up to 3 largest images across document
-            all_imgs = [image for page in doc.images for image in page]
-            sorted_imgs = sorted(
-                all_imgs,
-                key=lambda img: img.get("original_width", 0) * img.get("original_height", 0),
-                reverse=True,
-            )
-            for img in sorted_imgs[:3]:
-                b64 = doc.get_png_image_base64_by_xref(img.get("xref"))
-                if b64:
-                    images.append(b64)
-        else:
-            # Scanned: pick the largest image per page (first two pages)
-            for page in doc.pages[:2]:
-                xref = page.get("max_img_xref")
-                if xref:
-                    b64 = doc.get_png_image_base64_by_xref(xref)
-                    if b64:
-                        images.append(b64)
+
+def _cfg_bool(section: str, key: str, fallback: str = "false") -> bool:
+    try:
+        val = config.get(section, key, fallback=fallback)
+    except Exception:
+        val = fallback
+    s = str(val).strip().lower()
+    return s in {"1", "true", "yes", "on"}
+
+
+def _select_images_for_analysis(doc: PDFDocument) -> List[ImageCandidate]:
+    candidates: List[ImageCandidate] = []
+    try:
+        # Configurable knobs
+        try:
+            max_images = int(config.get("AI", "max_images_per_pdf", fallback="3"))
+        except Exception:
+            max_images = 3
+        try:
+            scan_threshold = float(config.get("AI", "scan_coverage_threshold", fallback="0.95"))
+        except Exception:
+            scan_threshold = 0.95
+        try:
+            first_pages_priority = int(config.get("AI", "first_pages_priority", fallback="3"))
+        except Exception:
+            first_pages_priority = 3
+        try:
+            min_icon_edge_cm = float(config.get("AI", "min_icon_edge_cm", fallback="2.0"))
+        except Exception:
+            min_icon_edge_cm = 2.0
+        group_small = _cfg_bool("AI", "group_small_images_per_page", fallback="true")
+        try:
+            small_group_threshold = int(config.get("AI", "small_images_group_threshold", fallback="3"))
+        except Exception:
+            small_group_threshold = 3
+        exclude_small_icons = _cfg_bool("AI", "exclude_small_icons", fallback="true")
+
+        doc.analyze_document_images()
+        if not getattr(doc, "pages", None):
+            return []
+
+        for page_idx, page_info in enumerate(doc.pages):
+            words = int(page_info.get("words_count", 0) or 0)
+            page_images = doc.images[page_idx] if page_idx < len(doc.images) else []
+            # Max coverage on this page
+            max_cov = 0.0
+            for img in page_images:
+                try:
+                    cov = float(img.get("page_coverage_percent", 0.0) or 0.0)
+                    if cov > max_cov:
+                        max_cov = cov
+                except Exception:
+                    pass
+            is_scan_page = max_cov >= (scan_threshold * 100.0)
+
+            # Determine small icons on this page
+            small_imgs = []
+            large_imgs = []
+            for img in page_images:
+                width_pt = img.get("width", 0.0) or 0.0
+                height_pt = img.get("height", 0.0) or 0.0
+                try:
+                    w_cm = PDFDocument._points_to_cm(width_pt)  # type: ignore[attr-defined]
+                    h_cm = PDFDocument._points_to_cm(height_pt)  # type: ignore[attr-defined]
+                    is_small = min(w_cm, h_cm) < float(min_icon_edge_cm)
+                except Exception:
+                    is_small = False
+                (small_imgs if is_small else large_imgs).append(img)
+
+            # Group multiple small images into a page-candidate
+            if group_small and len(small_imgs) >= small_group_threshold:
+                # Represent as a full page render candidate
+                # area_ratio ~ 1.0 for a page capture
+                base = 1000.0 if page_idx < first_pages_priority else 0.0
+                score = base + (1.0 / (words + 1))
+                candidates.append(ImageCandidate(
+                    kind="page",
+                    page_index=page_idx,
+                    xref=None,
+                    area_ratio=1.0,
+                    is_scan=is_scan_page,
+                    words_count=words,
+                    score=score,
+                ))
+
+            # Prefer page-candidate for scan pages
+            if is_scan_page:
+                base = 1000.0 if page_idx < first_pages_priority else 0.0
+                score = base + (1.0 / (words + 1))
+                candidates.append(ImageCandidate(
+                    kind="page",
+                    page_index=page_idx,
+                    xref=None,
+                    area_ratio=1.0,
+                    is_scan=True,
+                    words_count=words,
+                    score=score,
+                ))
+            else:
+                # For embedded images: add images as individual candidates (optionally excluding icons)
+                images_for_candidates = list(large_imgs) if exclude_small_icons else list(large_imgs) + list(small_imgs)
+                for img in images_for_candidates:
+                    xref = img.get("xref")
+                    try:
+                        area_ratio = float(img.get("page_coverage_percent", 0.0) or 0.0) / 100.0
+                    except Exception:
+                        area_ratio = 0.0
+                    base = 1000.0 if page_idx < first_pages_priority else 0.0
+                    # Score per spec: area_ratio / (words + 1)
+                    score = base + (area_ratio / (words + 1)) + (0.01 * area_ratio)
+                    candidates.append(ImageCandidate(
+                        kind="xref",
+                        page_index=page_idx,
+                        xref=xref,
+                        area_ratio=area_ratio,
+                        is_scan=False,
+                        words_count=words,
+                        score=score,
+                    ))
+
+        # Sort by score desc and keep only the top N
+        candidates.sort(key=lambda c: c.score, reverse=True)
+        selected = candidates[:max_images]
+
+        # Vector fallback: if nothing selected and pages have little text, render pages
+        if not selected:
+            try:
+                words_thr = int(config.get("AI", "vector_fallback_words_threshold", fallback="15"))
+            except Exception:
+                words_thr = 15
+            try:
+                vf_max_pages = int(config.get("AI", "vector_fallback_max_pages", fallback=str(max_images)))
+            except Exception:
+                vf_max_pages = max_images
+            fallback_pages: List[int] = [
+                idx for idx, p in enumerate(doc.pages)
+                if int(p.get("words_count", 0) or 0) <= words_thr
+            ]
+            # Prioritize earlier pages
+            fallback_pages = fallback_pages[:vf_max_pages]
+            for idx in fallback_pages:
+                selected.append(ImageCandidate(
+                    kind="page",
+                    page_index=idx,
+                    xref=None,
+                    area_ratio=1.0,
+                    is_scan=False,
+                    words_count=int(doc.pages[idx].get("words_count", 0) or 0),
+                    score=999.0 - idx,
+                ))
+
+        return selected
     except Exception as e:
         logging.error(f"Error preparing images for analysis: {e}")
-    return images
+    return []
 
 
 def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Dict[str, Any]]:
@@ -146,21 +282,75 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
         logging.info("Image analysis skipped (no model configured)")
         return None, {"cost": 0.0}
 
-    imgs = _select_images_for_analysis(doc)
-    if not imgs:
+    # Build candidate list with scoring and then render b64 + context in order
+    cands = _select_images_for_analysis(doc)
+    if not cands:
         logging.info("No images selected for analysis; skipping")
         return None, {"cost": 0.0}
 
     if mock_provider.is_mock_model(model):
-        response, usage = mock_provider.fetch(doc, "image", context={"image_count": len(imgs)})
+        response, usage = mock_provider.fetch(doc, "image", context={"image_count": len(cands)})
         return response, usage
 
+    # Config for rendering + context length
+    try:
+        page_render_max_px = int(config.get('AI', 'page_render_max_px', fallback='1536'))
+    except Exception:
+        page_render_max_px = 1536
+    try:
+        image_render_max_px = int(config.get('AI', 'image_render_max_px', fallback=str(page_render_max_px)))
+    except Exception:
+        image_render_max_px = page_render_max_px
+    try:
+        context_max_chars = int(config.get('AI', 'image_context_max_chars', fallback='800'))
+    except Exception:
+        context_max_chars = 800
+
+    def _truncate(text: str, n: int) -> str:
+        text = (text or "").strip()
+        return text if len(text) <= n else (text[:n] + "…")
+
+    # Render images in the same order as candidates and attach page text context
+    images_b64: List[str] = []
+    per_image_context: List[str] = []
+    used_pages: List[int] = []
+    for idx, c in enumerate(cands, start=1):
+        page_text = doc.get_page_text(c.page_index, use_ocr_if_needed=True)
+        per_image_context.append(
+            f"Image {idx} (page {c.page_index + 1}; kind={c.kind}; score={c.score:.3f})\n" +
+            f"Context (trimmed): {_truncate(page_text, context_max_chars)}"
+        )
+        if c.kind == "xref" and c.xref:
+            b64 = doc.render_image_region_png_base64(c.xref, max_px=image_render_max_px)
+            if not b64:
+                # Fallback to raw xref extract if region render failed
+                b64 = doc.get_png_image_base64_by_xref(c.xref)
+        else:
+            b64 = doc.render_page_png_base64(c.page_index, max_px=page_render_max_px)
+        if b64:
+            images_b64.append(b64)
+            used_pages.append(c.page_index)
+
+    if not images_b64:
+        logging.info("Rendering failed for selected images; skipping")
+        return None, {"cost": 0.0}
+
+    # Minimal, user-oriented log: how many images from which pages
+    page_counts: Dict[int, int] = {}
+    for p in used_pages:
+        page_counts[p + 1] = page_counts.get(p + 1, 0) + 1
+    summary = ", ".join(f"page {p}: {n}" for p, n in sorted(page_counts.items()))
+    logging.info("Image selection summary — %s", summary if summary else "no images")
+
+    # Build an informative prompt that lists each image with its page-local context
     prompt = (
         "You are a helpful assistant analyzing images inside of documents. Based on the shown images, provide:"
         " creation date, 3-4 word title, 3-4 sentence summary, creator/issuer, suitable keywords/tags,"
         " importance 0-10, and per-field confidence 0-10. "
         f"Always answer in {_lang()}. Keep the exact JSON format provided in the input."
-        " Extend this JSON consistently: " + doc.to_api_json()
+        " Extend this JSON consistently: " + doc.to_api_json() + "\n\n" +
+        "Per-image page context follows in the same order as the uploaded images:\n" +
+        "\n\n".join(per_image_context)
     )
 
     try:
@@ -170,7 +360,7 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
             temperature = float(temp_str)
         except Exception:
             temperature = 0.8
-        answer, usage = run_vision(model, prompt, imgs, temperature=temperature)
+        answer, usage = run_vision(model, prompt, images_b64, temperature=temperature)
         return _json_guard(answer), usage
     except Exception as e:
         logging.warning(f"Vision model error or unsupported: {e}")

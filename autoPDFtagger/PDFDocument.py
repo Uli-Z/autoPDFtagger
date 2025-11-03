@@ -302,6 +302,123 @@ class PDFDocument:
             logging.error(f"Error extracting PNG image by xref: {e}")
             return None
 
+    def render_image_region_png_base64(self, xref: int, max_px: int = 1024):
+        """
+        Render the region of the page containing the image identified by `xref`.
+        Scales so that the longest edge of the region is at most `max_px`.
+        Returns base64 PNG or None if not found.
+        """
+        try:
+            pdf_path = self.get_absolute_path()
+            pdf_document = fitz.open(pdf_path)
+            try:
+                for page_index in range(len(pdf_document)):
+                    page = pdf_document[page_index]
+                    rects = page.get_image_rects(xref)
+                    if not rects:
+                        continue
+                    rect = rects[0]
+                    longest = max(rect.width, rect.height)
+                    if longest <= 0:
+                        scale = 1.0
+                    else:
+                        scale = min(1.0, float(max_px) / float(longest)) if max_px else 1.0
+                    mat = fitz.Matrix(scale, scale)
+                    pix = page.get_pixmap(matrix=mat, clip=rect)
+                    img_bytes = pix.tobytes("png")
+                    encoded = base64.b64encode(img_bytes).decode()
+                    return encoded
+            finally:
+                pdf_document.close()
+            return None
+        except Exception as e:
+            logging.error(f"Error rendering image region by xref: {e}")
+            return None
+
+    @staticmethod
+    def _points_to_cm(value: float) -> float:
+        try:
+            return float(value) / 72.0 * 2.54
+        except Exception:
+            return 0.0
+
+    @classmethod
+    def rect_to_cm(cls, rect) -> tuple:
+        """
+        Convert a PyMuPDF rect's width/height (points) into centimeters.
+        Returns (width_cm, height_cm).
+        """
+        try:
+            return cls._points_to_cm(rect.width), cls._points_to_cm(rect.height)
+        except Exception:
+            return 0.0, 0.0
+
+    @classmethod
+    def is_small_icon_rect(cls, rect, min_edge_cm: float) -> bool:
+        try:
+            w_cm, h_cm = cls.rect_to_cm(rect)
+            return min(w_cm, h_cm) < float(min_edge_cm)
+        except Exception:
+            return False
+
+    def render_page_png_base64(self, page_index: int, max_px: int = 1536):
+        """
+        Render the given page into a PNG scaled so that its longest edge is
+        at most `max_px`. Returns base64 string, or None on error.
+        """
+        try:
+            pdf_path = self.get_absolute_path()
+            pdf_document = fitz.open(pdf_path)
+            if page_index < 0 or page_index >= len(pdf_document):
+                pdf_document.close()
+                return None
+            page = pdf_document[page_index]
+            width = page.rect.width
+            height = page.rect.height
+            longest = max(width, height)
+            if longest <= 0:
+                scale = 1.0
+            else:
+                scale = min(1.0, float(max_px) / float(longest)) if max_px else 1.0
+            mat = fitz.Matrix(scale, scale)
+            pix = page.get_pixmap(matrix=mat)
+            img_bytes = pix.tobytes("png")
+            encoded_image = base64.b64encode(img_bytes).decode()
+            pdf_document.close()
+            return encoded_image
+        except Exception as e:
+            logging.error(f"Error rendering page to PNG: {e}")
+            return None
+
+    def get_page_text(self, page_index: int, use_ocr_if_needed: bool = True) -> str:
+        """
+        Returns the text content of a single page. If the page has no text layer
+        and an OCR runner is configured, optionally OCR that page.
+        """
+        pdf_document = None
+        try:
+            pdf_document = fitz.open(self.get_absolute_path())
+            if page_index < 0 or page_index >= len(pdf_document):
+                return ""
+            page = pdf_document[page_index]
+            text = page.get_text("text") or ""
+            if text.strip():
+                return self._clean_text(text)
+            if use_ocr_if_needed and self._ocr_runner is not None:
+                logging.info("[Page OCR] %s (page %d)", self.file_name, page_index + 1)
+                ocr_text = self._ocr_runner.extract_text_from_page(page) or ""
+                return self._clean_text(ocr_text)
+            return ""
+        except Exception as e:
+            logging.error(f"Failed to get page text for {self.file_name}: {e}")
+            return ""
+        finally:
+            try:
+                if pdf_document is not None:
+                    pdf_document.close()
+            except Exception:
+                pass
+
 
     def get_modification_date(self):
         try:

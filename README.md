@@ -179,6 +179,10 @@ Do everything at once:
 $ autoPDFtagger pdf_archive -ftic -e new_archive
 ```
 
+### Image Analysis Strategy
+
+autoPDFtagger reviews every page before a vision request. If only a small amount of text is detected, the page is OCR'd first so the images go to the model together with page-local wording. Embedded images are prioritized by size and location; clusters of tiny icons can be replaced by a single page render while full-page scans remain standalone. A configurable upper limit keeps the number of image analyses per PDF predictable, balancing coverage with runtime and API cost.
+
 ## Random Technical Aspects / Dive Deeper If You Want
 
 - In addition to the terminal program, a Python module autoPDFtagger is available for integration with other software. Check the code for the interface details.
