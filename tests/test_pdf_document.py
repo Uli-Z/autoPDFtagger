@@ -1,9 +1,11 @@
+import base64
 from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
 import pytz
 
+import autoPDFtagger.PDFDocument as pdf_module
 from autoPDFtagger.PDFDocument import PDFDocument, pdf_date_to_datetime
 from autoPDFtagger.autoPDFtagger import autoPDFtagger
 
@@ -343,3 +345,205 @@ def test_analyze_document_images_computes_metrics(monkeypatch, make_pdf_document
     assert doc.pages[0]["words_count"] == 3
     assert doc.images[0][0]["page_coverage_percent"] == pytest.approx(10.0)
     assert doc.image_coverage == pytest.approx(10.0)
+
+
+def test_rect_to_cm_and_icon_detection():
+    from autoPDFtagger.PDFDocument import PDFDocument
+
+    rect = SimpleNamespace(width=72.0, height=144.0)
+    width_cm, height_cm = PDFDocument.rect_to_cm(rect)
+
+    assert width_cm == pytest.approx(2.54)
+    assert height_cm == pytest.approx(5.08)
+    assert PDFDocument.is_small_icon_rect(rect, min_edge_cm=3.0) is True
+    assert PDFDocument.is_small_icon_rect(rect, min_edge_cm=1.0) is False
+
+
+def test_render_page_png_base64_scales_to_max_px(monkeypatch, make_pdf_document):
+    from autoPDFtagger.PDFDocument import PDFDocument
+
+    doc = make_pdf_document("render-page.pdf")
+    calls = {}
+
+    class FakeMatrix:
+        def __init__(self, sx, sy):
+            self.sx = sx
+            self.sy = sy
+
+    class FakePixmap:
+        def tobytes(self, fmt):
+            assert fmt == "png"
+            return b"DATA"
+
+    class FakePage:
+        rect = SimpleNamespace(width=400.0, height=200.0)
+
+        def get_pixmap(self, matrix):
+            calls["matrix"] = matrix
+            return FakePixmap()
+
+    class FakeDoc:
+        def __len__(self):
+            return 1
+
+        def __getitem__(self, idx):
+            assert idx == 0
+            return FakePage()
+
+        def close(self):
+            calls["closed"] = True
+
+    def fake_open(path):
+        calls["opened"] = path
+        return FakeDoc()
+
+    fake_module = SimpleNamespace(open=fake_open, Matrix=FakeMatrix)
+    monkeypatch.setattr(pdf_module, "fitz", fake_module)
+
+    encoded = doc.render_page_png_base64(0, max_px=200)
+
+    assert encoded == base64.b64encode(b"DATA").decode()
+    assert calls["matrix"].sx == pytest.approx(0.5)
+    assert calls["closed"] is True
+
+
+def test_render_image_region_png_base64_clips_region(monkeypatch, make_pdf_document):
+    from autoPDFtagger.PDFDocument import PDFDocument
+
+    doc = make_pdf_document("render-region.pdf")
+    calls = {}
+
+    class FakeMatrix:
+        def __init__(self, sx, sy):
+            self.sx = sx
+            self.sy = sy
+
+    class FakePixmap:
+        def tobytes(self, fmt):
+            assert fmt == "png"
+            return b"IMG"
+
+    rect = SimpleNamespace(width=120.0, height=80.0)
+
+    class Page0:
+        rect = SimpleNamespace(width=400.0, height=400.0)
+
+        def get_image_rects(self, xref):
+            return []
+
+        def get_pixmap(self, *args, **kwargs):
+            raise AssertionError("Unexpected render on page 0")
+
+    class Page1:
+        rect = SimpleNamespace(width=400.0, height=400.0)
+
+        def get_image_rects(self, xref):
+            return [rect] if xref == 99 else []
+
+        def get_pixmap(self, matrix, clip=None):
+            calls["matrix"] = matrix
+            calls["clip"] = clip
+            return FakePixmap()
+
+    class FakeDoc:
+        def __len__(self):
+            return 2
+
+        def __getitem__(self, idx):
+            return [Page0(), Page1()][idx]
+
+        def close(self):
+            calls["closed"] = True
+
+    def fake_open(path):
+        return FakeDoc()
+
+    fake_module = SimpleNamespace(open=fake_open, Matrix=FakeMatrix)
+    monkeypatch.setattr(pdf_module, "fitz", fake_module)
+
+    encoded = doc.render_image_region_png_base64(99, max_px=100)
+
+    assert encoded == base64.b64encode(b"IMG").decode()
+    assert calls["clip"] is rect
+    assert calls["matrix"].sx == pytest.approx(100 / rect.width)
+    assert calls["closed"] is True
+
+
+def test_render_image_region_png_base64_returns_none_when_missing(monkeypatch, make_pdf_document):
+    from autoPDFtagger.PDFDocument import PDFDocument
+
+    doc = make_pdf_document("no-region.pdf")
+
+    class Page:
+        rect = SimpleNamespace(width=400.0, height=400.0)
+
+        def get_image_rects(self, xref):
+            return []
+
+    class FakeDoc:
+        def __len__(self):
+            return 1
+
+        def __getitem__(self, idx):
+            return Page()
+
+        def close(self):
+            self.closed = True
+
+    fake_doc = FakeDoc()
+
+    def fake_open(path):
+        return fake_doc
+
+    fake_module = SimpleNamespace(open=fake_open, Matrix=lambda sx, sy: SimpleNamespace(sx=sx, sy=sy))
+    monkeypatch.setattr(pdf_module, "fitz", fake_module)
+
+    assert doc.render_image_region_png_base64(5, max_px=200) is None
+    assert getattr(fake_doc, "closed", False) is True
+
+
+def test_get_page_text_uses_ocr_when_text_missing(monkeypatch, make_pdf_document):
+    from autoPDFtagger.PDFDocument import PDFDocument
+
+    doc = make_pdf_document("ocr-page.pdf")
+
+    class FakePage:
+        def get_text(self, mode):
+            assert mode == "text"
+            return ""
+
+    class FakeDoc:
+        def __len__(self):
+            return 1
+
+        def __getitem__(self, idx):
+            assert idx == 0
+            return FakePage()
+
+        def close(self):
+            pass
+
+    def fake_open(path):
+        return FakeDoc()
+
+    monkeypatch.setattr("autoPDFtagger.PDFDocument.fitz.open", fake_open)
+
+    class Runner:
+        def __init__(self):
+            self.calls = 0
+
+        def extract_text_from_page(self, page):
+            self.calls += 1
+            return "ocr text\n"
+
+    runner = Runner()
+    PDFDocument.configure_ocr(runner)
+    try:
+        text = doc.get_page_text(0, use_ocr_if_needed=True)
+        assert text == "ocr text"
+        assert runner.calls == 1
+
+        text_no_ocr = doc.get_page_text(0, use_ocr_if_needed=False)
+        assert text_no_ocr == ""
+    finally:
+        PDFDocument.configure_ocr(None)
