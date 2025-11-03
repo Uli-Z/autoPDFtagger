@@ -1,6 +1,8 @@
 import os
 import json
 import logging
+import io
+from contextlib import redirect_stdout, redirect_stderr
 from typing import Any, Dict, List, Optional, Tuple
 from autoPDFtagger.config import config as app_config
 from autoPDFtagger import cache
@@ -10,6 +12,11 @@ import hashlib
 try:
     import litellm  # type: ignore
     from litellm import completion  # type: ignore
+    # Keep LiteLLM's own logger quiet at INFO to avoid breaking our status board
+    try:
+        logging.getLogger("litellm").setLevel(logging.WARNING)
+    except Exception:
+        pass
 except Exception:  # pragma: no cover - tests will monkeypatch call sites
     litellm = None  # type: ignore
     completion = None  # type: ignore
@@ -198,7 +205,16 @@ def run_chat(
         kwargs["max_tokens"] = max_tokens
 
     logging.debug("LLM chat request: %s", {k: v for k, v in kwargs.items() if k != "messages"})
-    resp = completion(**kwargs)  # type: ignore[arg-type]
+    # Some providers/versions print to stdout/stderr; capture to keep progress bars clean
+    _buf_out, _buf_err = io.StringIO(), io.StringIO()
+    with redirect_stdout(_buf_out), redirect_stderr(_buf_err):
+        resp = completion(**kwargs)  # type: ignore[arg-type]
+    _out_text = _buf_out.getvalue().strip()
+    _err_text = _buf_err.getvalue().strip()
+    if _out_text:
+        logging.debug("LiteLLM stdout: %s", _out_text)
+    if _err_text:
+        logging.debug("LiteLLM stderr: %s", _err_text)
     try:
         text = resp["choices"][0]["message"]["content"]
     except Exception:
@@ -285,7 +301,16 @@ def run_vision(
         kwargs["max_tokens"] = max_tokens
 
     logging.debug("LLM vision request: %s (images=%d)", {k: v for k, v in kwargs.items() if k != "messages"}, len(images_b64))
-    resp = completion(**kwargs)  # type: ignore[arg-type]
+    # Capture any provider prints to keep our board intact
+    _buf_out, _buf_err = io.StringIO(), io.StringIO()
+    with redirect_stdout(_buf_out), redirect_stderr(_buf_err):
+        resp = completion(**kwargs)  # type: ignore[arg-type]
+    _out_text = _buf_out.getvalue().strip()
+    _err_text = _buf_err.getvalue().strip()
+    if _out_text:
+        logging.debug("LiteLLM stdout: %s", _out_text)
+    if _err_text:
+        logging.debug("LiteLLM stderr: %s", _err_text)
     try:
         text = resp["choices"][0]["message"]["content"]
     except Exception:
