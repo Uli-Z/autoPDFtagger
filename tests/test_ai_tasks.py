@@ -1,10 +1,12 @@
 import json
+from pathlib import Path
 
 import pytest
 
 from autoPDFtagger import ai_tasks
 from autoPDFtagger.ai_tasks import ImageCandidate
 from autoPDFtagger.config import config
+from autoPDFtagger.PDFDocument import PDFDocument
 
 
 class _StubTextDoc:
@@ -288,3 +290,22 @@ def test_analyze_images_skips_without_model():
 
     text, usage = ai_tasks.analyze_images(Doc(), model="")
     assert text is None and usage.get("cost", 1) == 0.0
+
+
+def test_fixture_image_meta_aligns_with_selection():
+    fixture_dir = Path(__file__).resolve().parents[1] / "testfiles"
+
+    for pdf_path in sorted(fixture_dir.glob("*.pdf")):
+        meta_path = pdf_path.with_name(f"{pdf_path.stem}.image.json")
+        if not meta_path.exists():
+            continue
+
+        doc = PDFDocument(str(pdf_path), str(fixture_dir))
+        candidates = ai_tasks._select_images_for_analysis(doc)
+
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        expected = (data.get("meta") or {}).get("expected") or {}
+        if "image_count" in expected:
+            assert len(candidates) == expected["image_count"], (
+                f"{pdf_path.name}: expected {expected['image_count']} images, got {len(candidates)}"
+            )
