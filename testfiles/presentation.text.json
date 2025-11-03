@@ -1,36 +1,34 @@
 {
   "response": {
-    "summary": "An OCR snippet indicates a presentation attributed to Henry Smith, who is listed as CEO. The material appears to be a briefing or explainer designed to convey a concept in an engaging, potentially informal manner. The exact topic of the presentation is not specified in the provided text, so the subject remains unclear. Overall, it looks like a leadership-oriented corporate communication intended to explain something in a 'fun' way.",
-    "summary_confidence": 6,
-    "title": "Henry Smith Presentation",
-    "title_confidence": 8,
+    "summary": "The document appears to be a presentation file featuring Henry Smith, identified as CEO, with an entry labeled 'Fun Explanation.' The OCR snippet provides minimal content, suggesting an overview or introductory slide rather than full text. The exact topic and date are not discernible from the available data.",
+    "summary_confidence": 4,
+    "title": "Henry Smith CEO Presentation",
+    "title_confidence": 4,
     "creation_date": null,
     "creation_date_confidence": 0,
     "creator": "Henry Smith",
     "creator_confidence": 9,
     "tags": [
-      "Henry Smith",
-      "CEO",
       "presentation",
+      "CEO",
+      "Henry Smith",
       "explanation",
-      "business",
-      "leadership"
+      "fun"
     ],
     "tags_confidence": [
+      7,
       9,
       9,
-      8,
-      7,
-      7,
-      8
+      6,
+      6
     ],
-    "importance": 5,
-    "importance_confidence": 6
+    "importance": 3,
+    "importance_confidence": 3
   },
   "usage": {
     "prompt_tokens": 292,
-    "completion_tokens": 2271,
-    "total_tokens": 2563,
+    "completion_tokens": 1728,
+    "total_tokens": 2020,
     "cost": 0.0
   }
 }

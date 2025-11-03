@@ -1,88 +1,61 @@
 {
   "response": [
     {
-      "summary": "Displays the company's key financial figures. It lists Sales of $27,000,000, Gross Profit of $12,000,000, Net Income of $5,000,000, and EBITDA of $8,500,000. The data highlights profitability and cash flow levels for the period. The slide appears to be part of a formal company presentation.",
-      "summary_confidence": 8,
       "title": "Key Financial Figures",
-      "title_confidence": 8,
+      "summary": "A slide listing core financial metrics for the company, including four figures. It highlights Sales, Gross Profit, Net Income, and EBITDA with large dollar amounts. The slide is part of a corporate presentation, likely on page 3. The numbers suggest a profitable period.",
+      "creator/issuer": "Corporate Presentation",
       "creation_date": null,
-      "creation_date_confidence": 0,
-      "creator": "Henry Smith (CEO)",
-      "creator_confidence": 6,
-      "tags": [
-        "financial metrics",
-        "sales",
-        "net income",
-        "EBITDA",
-        "profitability",
-        "slide deck"
-      ],
-      "tags_confidence": [
-        7,
-        7,
-        7,
-        7,
-        7,
-        7
-      ],
+      "tags": ["finance","financial figures","presentation","business"],
       "importance": 7,
-      "importance_confidence": 6
+      "confidences": {
+        "title": 0.85,
+        "summary": 0.65,
+        "creator/issuer": 0.6,
+        "creation_date": 0.4,
+        "tags": 0.75,
+        "importance": 0.8
+      },
+      "alt_text": "Key Financial Figures: a slide listing core metrics. On page 3 the slide shows Sales 27,000,000; Gross Profit 12,000,000; Net Income 5,000,000; EBITDA 8,500,000."
     },
     {
-      "summary": "A collage of employees celebrating a corporate event. The photos show groups of colleagues smiling, socializing, and toasting with drinks. The montage conveys a positive workplace culture and team camaraderie. It appears to be part of internal communications or a company celebration recap.",
-      "summary_confidence": 7,
-      "title": "Employee Celebration Collage",
-      "title_confidence": 8,
+      "title": "Team Celebration Montage",
+      "summary": "A collage of coworkers posing at a social event, smiling and toasting. The image captures a lively office gathering, likely a team celebration or party. It conveys a positive corporate culture and camaraderie. The photo is arranged as a montage of multiple group shots.",
+      "creator/issuer": "Company Event Photography",
       "creation_date": null,
-      "creation_date_confidence": 0,
-      "creator": "Unknown",
-      "creator_confidence": 4,
-      "tags": [
-        "team photos",
-        "corporate event",
-        "celebration",
-        "group portrait",
-        "workplace culture"
-      ],
-      "tags_confidence": [
-        7,
-        7,
-        7,
-        7,
-        7
-      ],
-      "importance": 4,
-      "importance_confidence": 6
+      "tags": ["photography","team","celebration","corporate culture"],
+      "importance": 5,
+      "confidences": {
+        "title": 0.8,
+        "summary": 0.65,
+        "creator/issuer": 0.6,
+        "creation_date": 0.4,
+        "tags": 0.75,
+        "importance": 0.75
+      },
+      "alt_text": "Team Celebration Montage depicts coworkers at a social event on page 2. The collage shows people smiling and toasting at a corporate gathering."
     },
     {
-      "summary": "Shows the Year-End Review 1999 cover page, with decorative framing and bold typography. The page appears to be part of a corporate presentation led by Henry Smith, the CEO. It suggests a formal annual review and summary of the year's performance. It functions as an introductory or title page to a broader performance report.",
-      "summary_confidence": 7,
       "title": "Year-End Review 1999",
-      "title_confidence": 8,
-      "creation_date": 1999,
-      "creation_date_confidence": 6,
-      "creator": "Henry Smith (CEO)",
-      "creator_confidence": 7,
-      "tags": [
-        "year-end review",
-        "presentation",
-        "CEO",
-        "corporate"
-      ],
-      "tags_confidence": [
-        7,
-        7,
-        7,
-        7
-      ],
-      "importance": 7,
-      "importance_confidence": 6
+      "summary": "A vintage year-end review cover page with an ornate border and bold serif typography. The beige card reads Year-End Review 1999, suggesting a formal corporate report. The design evokes late-1990s print aesthetics and corporate publication styles. It appears to be the cover of a document in the collection.",
+      "creator/issuer": "Corporate Communications Department",
+      "creation_date": "1999",
+      "tags": ["cover","annual report","print design","year-end"],
+      "importance": 4,
+      "confidences": {
+        "title": 0.85,
+        "summary": 0.7,
+        "creator/issuer": 0.6,
+        "creation_date": 0.8,
+        "tags": 0.75,
+        "importance": 0.8
+      },
+      "alt_text": "Year-End Review 1999 cover with ornate border and bold serif typography. The image shows a vintage corporate cover page that suggests a year-end report from 1999."
     }
   ],
   "usage": {
-    "prompt_tokens": 1510,
-    "completion_tokens": 4634,
-    "total_tokens": 6144,
+    "prompt_tokens": 1578,
+    "completion_tokens": 5550,
+    "total_tokens": 7128,
     "cost": 0.0
   },
   "meta": {
