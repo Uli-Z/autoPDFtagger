@@ -60,7 +60,6 @@ Place your config at `~/.autoPDFtagger.conf`. Use `autoPDFtagger_example_config.
 - 24h on‑disk cache for OCR and AI calls; default directory is `~/.autoPDFtagger/cache`.
 - Disable per run with `--no-cache`.
 - The tool reports both spent and saved (cache) costs to keep runs predictable.
-
 ### Confidence Logic
 
 Results include per‑field confidences (0–10). An overall confidence index guides updates and filtering. By default, updates apply only when new results improve confidence; the index aggregates fields with extra weight on title and date.
