@@ -9,12 +9,23 @@ from autoPDFtagger import cache
 import hashlib
 
 # LiteLLM is optional at import time for tests; we stub usage when patched
+# Proactively dampen library logging before import when possible
+os.environ.setdefault("LITELLM_LOG", "ERROR")
 try:
     import litellm  # type: ignore
     from litellm import completion  # type: ignore
-    # Keep LiteLLM's own logger quiet at INFO to avoid breaking our status board
+    # Keep LiteLLM and common deps quiet to avoid breaking our status board
+    for _name in ("litellm", "LiteLLM", "openai", "httpx", "httpcore"):
+        try:
+            _logger = logging.getLogger(_name)
+            _logger.setLevel(logging.WARNING)
+            _logger.propagate = False
+        except Exception:
+            pass
+    # Best-effort: newer litellm exposes set_verbose
     try:
-        logging.getLogger("litellm").setLevel(logging.WARNING)
+        if hasattr(litellm, "set_verbose"):
+            litellm.set_verbose(False)  # type: ignore[attr-defined]
     except Exception:
         pass
 except Exception:  # pragma: no cover - tests will monkeypatch call sites
