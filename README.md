@@ -77,6 +77,26 @@ languages = eng
 ; API-Key = sk-...
 ```
 
+### Local Models (Ollama)
+
+You can run fully local without any cloud keys by using Ollama through LiteLLM.
+
+- Install Ollama and pull models:
+  - `curl -fsSL https://ollama.com/install.sh | sh`
+  - Vision (images): `ollama pull llava`
+  - Text: `ollama pull llama3:8b` (or another text model)
+- Ensure the Ollama service is running (`ollama serve` on first start; then it runs as a daemon).
+- Configure models in `~/.autoPDFtagger.conf`:
+  ```ini
+  [AI]
+  text_model_short = ollama/llama3:8b
+  text_model_long  = ollama/llama3:8b
+  image_model      = ollama/llava
+  tag_model        = ollama/llama3:8b
+  ```
+- No API keys required; data stays on your machine. Default Ollama endpoint is `http://localhost:11434`.
+- Quick test: `autoPDFtagger ./pdf_archive -ftic -e ./out --json all.json`
+
 ## Program Structure
 
 The program is fundamentally structured as follows:
