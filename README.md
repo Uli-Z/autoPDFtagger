@@ -1,58 +1,46 @@
 # autoPDFtagger
 
-## Overview
+## What It Is
 
-autoPDFtagger is a small CLI that makes plain old folders work like a searchable archive. It is not a document management system. The tool uses AI to extract and index text from scanned PDFs and to propose clean, consistent filenames and standard PDF metadata. With good indexing and naming, you can find files via any file browser or OS search — no proprietary database, no lock‑in. Because it writes standard PDF metadata and exports JSON, it stays compatible with any DMS you already use or may adopt later. Ideal for personal archives and small offices that want longevity and minimal maintenance.
+autoPDFtagger is a CLI that enriches PDFs with standard metadata using OCR + AI (text and images). It keeps your archive as plain files and folders (no lock‑in) and can export JSON for easy review and integration.
 
-## Key Concepts
+## Key Features
 
-- **AI-Powered Tagging**: Uses LLMs to automatically enrich PDFs (text + images), including complex drawings and low-quality scans.
-- **Multi‑provider + Local LLMs**: Works with OpenAI out of the box and, via LiteLLM, also supports Gemini and local models through Ollama.
-- **Focus**: Engineered for paperless home-office setups, prioritizing precise data analysis over complex UI.
-- **No DMS/Vendor Lock‑in**: Works directly on the filesystem with plain files and standard PDF metadata; AI improves indexing and naming so files are discoverable via any file browser/OS search and remain compatible with any DMS.
-- **Requirements**: Python environment and either a provider API key (e.g., OpenAI) or a local Ollama setup.
-- **Functionalities**:
-  - Robust text analysis powered by GPT.
-  - Advanced image analysis utilizing GPT-Vision.
-  - Operates on the filesystem using existing folder structures, filenames, and standard PDF metadata (no proprietary archive).
-  - Exports JSON for piping/integration and writes standard PDF metadata; no proprietary database.
-  - Standardizes file naming (YY-mm-dd-{TITLE}.pdf) and updates PDF metadata for efficient indexing.
-  - Configurable to integrate other AI agents.
-  - Future enhancements to refine folder organization.
+- OCR + AI text analysis with per‑document model selection
+- Vision analysis for embedded images and scans with page‑local context
+- Smart image prioritization with a per‑PDF cap for predictable runtime/costs
+- Writes standard PDF metadata and exports JSON (no proprietary DB)
+- Multi‑provider via LiteLLM (OpenAI, Gemini, local Ollama)
+- 24h on‑disk cache with cost spent/saved reporting
 
-## Concept and Context
+## Quick Start
 
-- Problem: Many documents arrive as scans or mixed‑quality PDFs. Plain OCR often misses context (drawings, photos), and ad‑hoc filenames make long‑term search difficult.
-- Philosophy: Archives must remain usable for decades. That means simple folders, human‑readable filenames, and backups anyone can understand — independent of specific apps or platforms.
-- Approach: "Old‑school, AI‑assisted." autoPDFtagger analyzes text and images (GPT‑based) to build a searchable index and suggest consistent filenames. It writes standard PDF metadata and can output JSON for piping and review.
-- Safety & control: Leaves originals untouched unless you export; uses a confidence logic to only update when results improve quality.
-- Outcome: Faster, more reliable search in your existing filesystem. No DMS required — yet fully compatible with any DMS.
+```bash
+# 1) Install (editable for local dev)
+python -m venv .venv && source .venv/bin/activate && pip install -e .
 
-## Current Status
-At the moment, there exists a functional prototype in the form of a terminal program with a Python module, which demonstrates its functionality and has already achieved impressive results for me. For a broader application, many detailed improvements are certainly necessary, especially in testing, promt-optimization, error handling and documentation.
+# 2) Create a config from the example
+cp autoPDFtagger_example_config.conf ~/.autoPDFtagger.conf
+# Edit models/API keys inside if you use cloud providers
 
-## Caution and Considerations / Disclaimer
-
-- **Data Privacy**: PDF content is transmitted to AI provider servers for analysis. While AI providers claim non-use of API inputs for training, sensitivity in handling private documents is advised. Alternatively, using a local LLM can mitigate these concerns as data remains on your local machine.
-- **Cost Control**: Be aware of the costs associated with API usage. Based on an analysis in 10/2025 with a mix of documents, the costs are roughly as follows (using a model like GPT-5-nano): Text analysis of a document costs around 0.001 $, and image analysis around 0.001 $. These costs can vary depending on the document size and complexity.
-- **Accuracy and Reliability**: This initial version is a proof-of-concept and may have limitations. It's designed to create copies rather than alter original files.
-- **Metadata Editing**: Altering metadata could potentially invalidate certain documents. Be careful with digital signed documents.
-
-## Contribute ##
-
-If you find this tool helpful and have ideas to improve it, feel free to contribute. While I'm not a full-time programmer and i'm not feeling professional at all, any suggestions or enhancements are welcome. Submit bug reports, feature requests, or any other feedback. Thanks for stopping by!
-
-## Requirements to run this program
-- Python
-- For cloud models: a provider API key (e.g., `OPENAI_API_KEY`)
-- For local models: a running Ollama with the chosen model pulled (e.g., `ollama pull llava`)
-
-## Installation
- ```shell
-$ pip install git+https://github.com/Uli-Z/autoPDFtagger
+# 3) Run on a folder and export
+autoPDFtagger ./pdf_archive -ftic -e ./out --json all.json
 ```
 
-Create configuration file and save it to *~/.autoPDFtagger.conf*: 
+## Requirements
+- Python 3.9+
+- For cloud models: provider API key (e.g., `OPENAI_API_KEY`)
+- For local models: Ollama with the chosen model pulled (e.g., `ollama pull llava`)
+
+## Installation
+```shell
+pip install git+https://github.com/Uli-Z/autoPDFtagger
+```
+
+## Configuration
+Minimal configuration lives at `~/.autoPDFtagger.conf` (see `autoPDFtagger_example_config.conf`).
+
+Create the file and adjust models/keys as needed:
 ```ini
 ; Configuration for autoPDFtagger
 
@@ -77,6 +65,18 @@ languages = eng
 ; API-Key = sk-...
 ```
 
+### Image Analysis Strategy
+
+- If a page has little text, OCR runs first so the vision model sees page‑local wording.
+- Embedded images and full‑page scans are prioritized; clusters of tiny icons can be replaced with a page render.
+- Only the top‑N images per PDF are analyzed (configurable) to keep runtime and cost predictable.
+
+### Caching & Costs
+
+- 24h on‑disk cache for OCR and AI calls; default dir `~/.autoPDFtagger/config`.
+- Disable per run with `--no-cache`.
+- Logs show per‑call usage, and cache hits include `saved_cost`; totals for spent/saved are aggregated per run.
+
 ### Local Models (Ollama)
 
 You can run fully local without any cloud keys by using Ollama through LiteLLM.
@@ -97,33 +97,26 @@ You can run fully local without any cloud keys by using Ollama through LiteLLM.
 - No API keys required; data stays on your machine. Default Ollama endpoint is `http://localhost:11434`.
 - Quick test: `autoPDFtagger ./pdf_archive -ftic -e ./out --json all.json`
 
-## Program Structure
+## CLI Examples
 
-The program is fundamentally structured as follows:
+Analyze a folder, write JSON, and export PDFs with updated metadata:
+```shell
+autoPDFtagger ./pdf_archive -ftic -e ./new_archive --json allfiles.json
+```
 
-### 1. Read Database (Input)
-- By specifying PDF files
-- By specifying a JSON file
-- By entering JSON via standard input
+Run only AI text analysis on an existing JSON:
+```shell
+autoPDFtagger allfiles.json --ai-text-analysis --json textanalysis.json
+```
 
-### 2. Modify Database (Processing)
-- Filtering files based on quality criteria
-- Analysis of existing metadata, file name, folder structure (`file analysis`)
-- Analysis of the contained text (`text analysis`)
-- Analysis of the contained images (`image analysis`)
-- Analysis and sorting of tags (`tag analysis`)
-
-### 3. Output Database (Output)
-- As JSON via standard output
-- As JSON in a file
-- In the form of PDF files with updated metadata included
-- As statistics
-
-**Note:** Principally, (almost) all options are combinable. The order of the individual steps is fixed, however; they are processed in the order mentioned above. Instead, the use of piping in the terminal is explicitly considered, allowing to pass the state of the database to another instance of the program. This makes it possitble to check and modify each step (e.g., first text analysis, then filtering by quality, followed by image analysis, then re-filtering, and finally exporting the PDF files). Using JSON-Output, the results of the program can be piped directly to another instance of the program. 
+Run AI image analysis for low‑quality entries and merge:
+```shell
+autoPDFtagger textanalysis.json --keep-below --ai-image-analysis --json imageanalysis.json
+```
 
 
 ## Usage
- ```shell
+```shell
 $ autoPDFtagger --help
 usage: autoPDFtagger [-h] [--config-file CONFIG_FILE] [-b [BASE_DIRECTORY]] [-j [JSON]] [-s [CSV]] [-d {0,1,2}] [-f] [-t] [-i] [-c] [-e [EXPORT]] [-l]
                      [--keep-above [KEEP_ABOVE]] [--keep-below [KEEP_BELOW]] [--calc-stats]
@@ -168,73 +161,35 @@ options:
                         Override Tesseract language codes (e.g. 'deu+eng')
 ```
 
-## Examples
-Read all pdf files from a folder *pdf_archive*, do a basic file analysis (-f) and store information in a JSON-database *files.json* (-j [filename]):
-```shell
-$ autoPDFtagger ./pdf_archive --file-analysis --json allfiles.json
-```
+## Privacy & Limits
 
-Read a previous created JSON-database an do an AI-text-analysis, storing the results in a new JSON-file
-```shell
-$ autoPDFtagger allfiles.json --ai-text-analysis --json textanalysis.json
-```
-
-Do an AI-image-analysis for all files with estimated low-quality metadata.
-```shell
-$ autoPDFtagger textanalysis.json --keep-below --ai-image-analysis --json imageanalysis.json
-```
-
-Recollect all together, analyse and organize tags
-```shell
-$ autoPDFtagger textanalysis.json imageanalysis.json --ai-tag-analysis --json final.json
-```
-
-Copy the files to a new folder *new_archive* setting new metadata and assigning new filenames. The original folder structure remains unchanged.
-```shell
-$ autoPDFtagger final.json -e ./new_archive
-```
-
-Do everything at once: 
-```shell
-$ autoPDFtagger pdf_archive -ftic -e new_archive
-```
-
-### Image Analysis Strategy
-
-autoPDFtagger reviews every page before a vision request. If only a small amount of text is detected, the page is OCR'd first so the images go to the model together with page-local wording. Embedded images are prioritized by size and location; clusters of tiny icons can be replaced by a single page render while full-page scans remain standalone. A configurable upper limit keeps the number of image analyses per PDF predictable, balancing coverage with runtime and API cost.
-
-## Random Technical Aspects / Dive Deeper If You Want
-
-- In addition to the terminal program, a Python module autoPDFtagger is available for integration with other software. Check the code for the interface details.
-- The analysis of files includes not just the filename but also the local file path relative to a base directory (Base-Directory). By default, when folders are specified, the respective folder is set as the base directory for all files down to the subfolders. In some cases, it may be sensible to manually set a different base directory.
-- Metadata management uses a "confidence logic". This means data is only updated if the (estimated) certainty/confidence is higher than the existing data. This aims for incremental improvement of information but can sometimes lead to inconsistent results.
-- Keyword **confidence-index**: Within the program, it's possible to filter the database by this value. What's the rationale behind it? Primarily, it's a quickly improvised solution to enable sorting of database entries by the quality of their metadata. The AI itself assesses how well it can answer the given questions based on the available information and sets a confidence level. There are individual confidence values for the title, summary, and creation date. To consolidate these into a single value, the average is initially calculated. However, since the title and creation date are particularly critical, the minimum value out of the average, title, and creation date is used
-- The **text and image analysis** of documents can be performed by various models. As of 10/2025, a model like GPT-5-nano provides a good balance between cost and quality, with costs around 0.001 $ per document for both text and image analysis. The tool is designed to be flexible, allowing the use of different models to optimize for cost or quality.
-
+- Data privacy: Cloud providers receive content for analysis. Use local models to keep data on your machine.
+- Accuracy: Results are AI‑assisted; review before applying changes. Originals remain untouched unless exporting.
+- Metadata: Changing metadata may affect digitally signed PDFs.
 
 ## Code Structure
 
-- `main.py`: CLI entry point.
-- `autoPDFtagger.py`: Orchestrates analyses across the file list.
-- `ai_tasks.py`: High-level task functions (text/images/tags) with prompts and JSON handling.
-- `llm_client.py`: Thin LiteLLM wrapper for chat/vision and usage-based cost calculation.
-- `PDFDocument.py`: PDF operations + metadata handling.
-- `PDFList.py`: Collection/database for documents with JSON/CSV import/export.
-- `config.py`: Configuration loader.
-- `autoPDFtagger_example_config.conf`: Example config with `[AI]` options and optional key fallback.
+- `main.py`: CLI entry point
+- `autoPDFtagger.py`: Orchestrates analyses across the file list
+- `ai_tasks.py`: Text/image/tag tasks and prompts
+- `llm_client.py`: LiteLLM wrapper (chat/vision) + cost calculation
+- `PDFDocument.py`: PDF operations + metadata
+- `PDFList.py`: Collection/database with JSON/CSV import/export
+- `config.py`: Configuration loader
+- `autoPDFtagger_example_config.conf`: Example config
 
+## Project Status
+Functional CLI with solid results; ongoing improvements in testing, prompt optimization, error handling, and docs.
 
+## Contributing
+Contributions welcome — issues and PRs appreciated.
 
 ## Future Development
 
-- **Implementing an AI-API-Cache to save cost and time for testing**
-- **Cost Control**: Implementing features for monitoring and managing API usage costs.
-- **Graphical User Interface**: Developing a more user-friendly interface.
-- **HTML Viewer App**: A proposed app to visualize the JSON database and integrate it with the file archive.
-- **Integration and Compatibility**:
-  - Expanding to other AI APIs and exploring local AI model integration.
-  - Ensuring compatibility with applications like paperless-ngx.
-- Enhancing tag organization and developing hierarchical information through the application of clustering algorithms on a vector database
+- Cost control and monitoring improvements
+- Optional UI and lightweight viewer app
+- Expanded provider support and compatibility with tools like paperless‑ngx
+- Tag organization and clustering on embeddings
 
 ## License
 
