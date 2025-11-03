@@ -160,28 +160,7 @@ class autoPDFtagger:
                     return _run
                 jm.add_job(Job(id=ocr_id, kind="ocr", run=_make_ocr()))
 
-            if do_text:
-                def _make_text(doc=document):
-                    def _run():
-                        try:
-                            logging.info("[AI text] %s", doc.file_name)
-                            response, usage = ai_tasks.analyze_text(doc, ms, ml, thr)
-                            self._log_ai_response("text", doc, response, usage)
-                            if response:
-                                doc.set_from_json(response)
-                            with lock:
-                                totals["text"] += float((usage or {}).get('cost', 0.0) or 0.0)
-                            logging.info("[AI text done] %s", doc.file_name)
-                        except Exception as exc:
-                            logging.error("Text analysis failed for %s: %s", doc.file_name, exc)
-                            raise
-                    return _run
-                deps = [ocr_id] if enable_ocr else []
-                if do_image:
-                    # Ensure text runs after image for the same document so that alt-texts are available
-                    deps.append(f"image:{abs_path}")
-                jm.add_job(Job(id=f"text:{abs_path}", kind="text", run=_make_text(), deps=deps))
-
+            # Add image job first so its future exists when wiring text deps
             if do_image:
                 def _make_img(doc=document):
                     def _run():
@@ -205,6 +184,28 @@ class autoPDFtagger:
                     return _run
                 # Image analysis does not require OCR; keep independent
                 jm.add_job(Job(id=f"image:{abs_path}", kind="image", run=_make_img()))
+
+            if do_text:
+                def _make_text(doc=document):
+                    def _run():
+                        try:
+                            logging.info("[AI text] %s", doc.file_name)
+                            response, usage = ai_tasks.analyze_text(doc, ms, ml, thr)
+                            self._log_ai_response("text", doc, response, usage)
+                            if response:
+                                doc.set_from_json(response)
+                            with lock:
+                                totals["text"] += float((usage or {}).get('cost', 0.0) or 0.0)
+                            logging.info("[AI text done] %s", doc.file_name)
+                        except Exception as exc:
+                            logging.error("Text analysis failed for %s: %s", doc.file_name, exc)
+                            raise
+                    return _run
+                deps = [ocr_id] if enable_ocr else []
+                if do_image:
+                    # Ensure text runs after image for the same document so that alt-texts are available
+                    deps.append(f"image:{abs_path}")
+                jm.add_job(Job(id=f"text:{abs_path}", kind="text", run=_make_text(), deps=deps))
 
         # Run and summarize
         pending, running, done, failed = jm.run()
