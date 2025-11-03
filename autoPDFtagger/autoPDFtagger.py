@@ -90,8 +90,13 @@ class autoPDFtagger:
             logging.info("... " + document.file_name)
             response, usage = ai_tasks.analyze_images(document, model)
             self._log_ai_response("image", document, response, usage)
-            if response:
-                document.set_from_json(response)
+            # Backward-compatibility: only set metadata if response is a single JSON object
+            try:
+                parsed = json.loads(response) if response else None
+                if isinstance(parsed, dict):
+                    document.set_from_json(response)
+            except Exception:
+                pass
             costs += float(usage.get('cost', 0.0) or 0.0)
         logging.info("Spent " + str(costs) + " $ for image analysis")
 
@@ -172,6 +177,9 @@ class autoPDFtagger:
                             raise
                     return _run
                 deps = [ocr_id] if enable_ocr else []
+                if do_image:
+                    # Ensure text runs after image for the same document so that alt-texts are available
+                    deps.append(f"image:{abs_path}")
                 jm.add_job(Job(id=f"text:{abs_path}", kind="text", run=_make_text(), deps=deps))
 
             if do_image:
@@ -181,8 +189,13 @@ class autoPDFtagger:
                             logging.info("[AI image] %s", doc.file_name)
                             response, usage = ai_tasks.analyze_images(doc, image_model)
                             self._log_ai_response("image", doc, response, usage)
-                            if response:
-                                doc.set_from_json(response)
+                            # Backward-compatibility: update only if response is a single object
+                            try:
+                                parsed = json.loads(response) if response else None
+                                if isinstance(parsed, dict):
+                                    doc.set_from_json(response)
+                            except Exception:
+                                pass
                             with lock:
                                 totals["image"] += float((usage or {}).get('cost', 0.0) or 0.0)
                             logging.info("[AI image done] %s", doc.file_name)

@@ -98,11 +98,14 @@ def main():
     # Parallel job execution for AI + OCR based on configuration
     if args.ai_text_analysis or args.ai_image_analysis:
         if is_output_option_set():
-            # Enable OCR stage whenever a runner is available and text analysis is requested.
-            enable_ocr = bool(ocr_setup.runner) and bool(args.ai_text_analysis)
+            # If image analysis is requested, follow up with text analysis automatically
+            do_image = bool(args.ai_image_analysis)
+            do_text = bool(args.ai_text_analysis or args.ai_image_analysis)
+            # Enable OCR when any text analysis is planned and an OCR runner is available
+            enable_ocr = bool(ocr_setup.runner) and do_text
             archive.run_jobs_parallel(
-                do_text=bool(args.ai_text_analysis),
-                do_image=bool(args.ai_image_analysis),
+                do_text=do_text,
+                do_image=do_image,
                 enable_ocr=enable_ocr,
             )
         else:

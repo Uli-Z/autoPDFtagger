@@ -290,6 +290,27 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
 
     if mock_provider.is_mock_model(model):
         response, usage = mock_provider.fetch(doc, "image", context={"image_count": len(cands)})
+        # Attempt to inject alt-texts based on mock response structure
+        try:
+            items = json.loads(response)
+            if isinstance(items, dict):
+                items = [items]
+            if isinstance(items, list):
+                alts = []
+                for i, item in enumerate(items[: len(cands)]):
+                    title = (item or {}).get("title") or ""
+                    summary = (item or {}).get("summary") or ""
+                    alt_text = (item or {}).get("alt_text") or (f"{title}. {summary}" if (title or summary) else "")
+                    if alt_text:
+                        alts.append((cands[i].page_index, alt_text))
+                if alts:
+                    try:
+                        # Inject synthesized alt-texts into document text for follow-up text analysis
+                        doc.inject_image_alt_texts(alts)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         return response, usage
 
     # Config for rendering + context length
@@ -344,12 +365,17 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
 
     # Build an informative prompt that lists each image with its page-local context
     prompt = (
-        "You are a helpful assistant analyzing images inside of documents. Based on the shown images, provide:"
-        " creation date, 3-4 word title, 3-4 sentence summary, creator/issuer, suitable keywords/tags,"
-        " importance 0-10, and per-field confidence 0-10. "
-        f"Always answer in {_lang()}. Keep the exact JSON format provided in the input."
-        " Extend this JSON consistently: " + doc.to_api_json() + "\n\n" +
-        "Per-image page context follows in the same order as the uploaded images:\n" +
+        "You are a helpful assistant analyzing images inside of documents."
+        " For each image, produce an object with these fields:"
+        " title (3-4 words), summary (3-4 sentences), creator/issuer, creation_date (if any),"
+        " tags (list), importance (0-10), per-field confidences, and alt_text."
+        " The alt_text must explicitly include the image Title and Summary in one or two sentences,"
+        " suitable for an HTML alt attribute, and must not include tags or confidence values."
+        " It should reflect both the visual content and the page-local text context. "
+        f"Always answer in {_lang()}. Output must be a JSON array, one object per image,"
+        " in the same order as the uploaded images."
+        "\n\nDocument context (existing, to be extended consistently):\n" + doc.to_api_json() +
+        "\n\nPer-image page context follows in the same order as the uploaded images:\n" +
         "\n\n".join(per_image_context)
     )
 
@@ -361,7 +387,28 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
         except Exception:
             temperature = 0.8
         answer, usage = run_vision(model, prompt, images_b64, temperature=temperature)
-        return _json_guard(answer), usage
+        text = _json_guard(answer)
+        # Try to extract per-image alt texts and inject into the document's text buffer
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                data = [data]
+            if isinstance(data, list):
+                alts = []
+                for i, item in enumerate(data[: len(used_pages)]):
+                    title = (item or {}).get("title") or ""
+                    summary = (item or {}).get("summary") or ""
+                    alt_text = (item or {}).get("alt_text") or (f"{title}. {summary}" if (title or summary) else "")
+                    if alt_text:
+                        alts.append((used_pages[i], alt_text))
+                if alts:
+                    try:
+                        doc.inject_image_alt_texts(alts)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return text, usage
     except Exception as e:
         logging.warning(f"Vision model error or unsupported: {e}")
         return None, {"cost": 0.0}

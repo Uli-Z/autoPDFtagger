@@ -85,6 +85,8 @@ class PDFDocument:
         self.images_already_analyzed = False
         self.image_coverage = None
         self.pdf_text: Optional[str] = None
+        # Buffer for synthesized image alt-texts (tuples of (page_index, alt_text))
+        self._image_alt_texts = []
 
     def get_absolute_path(self):
         return os.path.join(self.folder_path_abs, self.file_name)
@@ -94,6 +96,55 @@ class PDFDocument:
         if self.pdf_text is None:
             self.pdf_text = self.read_ocr()
         return self.pdf_text
+
+    def inject_image_alt_texts(self, alts_by_page):
+        """
+        Inject concise image descriptions (alt-texts) into the in-memory text buffer
+        so that subsequent text analysis can leverage them. Each entry is a tuple
+        (page_index, alt_text). This does not modify the PDF file on disk; use
+        save_to_file to persist metadata changes if desired.
+        """
+        try:
+            # Group alt-texts by page
+            grouped = {}
+            for page_index, alt_text in alts_by_page:
+                if not alt_text:
+                    continue
+                self._image_alt_texts.append((page_index, alt_text))
+                grouped.setdefault(int(page_index), []).append(alt_text)
+
+            # Rebuild text by page, appending alt-texts to their respective pages.
+            # This ensures the alt text appears at least on the same page.
+            # Use OCR/text extraction per page to avoid losing baseline text.
+            # If extraction fails, fall back to appending to the end.
+            page_texts = []
+            try:
+                import fitz  # local import to avoid unused at module level
+                pdf = fitz.open(self.get_absolute_path())
+                try:
+                    page_count = len(pdf)
+                finally:
+                    pdf.close()
+            except Exception:
+                page_count = 0
+
+            if page_count > 0:
+                for idx in range(page_count):
+                    base = self.get_page_text(idx, use_ocr_if_needed=True) or ""
+                    extras = grouped.get(idx) or []
+                    if extras:
+                        base = (base + "\n\n" + "\n".join(f"[Image p{idx+1}] {t}" for t in extras)).strip()
+                    page_texts.append(base)
+                self.pdf_text = "\n\n".join(page_texts).strip()
+            else:
+                # Fallback if page count cannot be determined
+                base_text = self.get_pdf_text() or ""
+                lines = [f"[Image] {t}" for _, t in alts_by_page if t]
+                if lines:
+                    self.pdf_text = (base_text + "\n\n" + "\n".join(lines)).strip()
+        except Exception:
+            # Non-fatal; leave text as-is on failure
+            pass
             
 
     def analyze_file(self):
