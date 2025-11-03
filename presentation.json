@@ -1,0 +1,34 @@
+[
+    {
+        "folder_path_abs": "/home/uzorn/Git/autoPDFtagger/testfiles",
+        "relative_path": ".",
+        "base_directory_abs": "/home/uzorn/Git/autoPDFtagger/testfiles",
+        "file_name": "presentation.pdf",
+        "summary": "This document appears to be a 1999 corporate year-end presentation led by CEO Henry Smith. The cover reads 'Year-End Review 1999' and is accompanied by images such as a New Year celebration collage. The slides summarize key financial figures, including Net Income around $4.5 million and EBITDA around $8.5 million, with categories like Sales and Gross Profit shown on a Key Financial Figures slide. There is a note 'FOR NEXT YEAR' suggesting planning or commentary for the following year.",
+        "summary_confidence": 7,
+        "title": "Year-End Review 1999",
+        "title_confidence": 9,
+        "creation_date": null,
+        "creation_date_confidence": 0,
+        "creator": "Henry Smith",
+        "creator_confidence": 9,
+        "tags": [
+            "Year-End 1999",
+            "Financial figures",
+            "Net Income",
+            "EBITDA",
+            "Corporate presentation",
+            "CEO Henry Smith"
+        ],
+        "tags_confidence": [
+            9,
+            8,
+            8,
+            8,
+            7,
+            9
+        ],
+        "importance": 7,
+        "importance_confidence": 7
+    }
+]
