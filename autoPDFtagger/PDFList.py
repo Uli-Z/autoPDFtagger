@@ -281,6 +281,9 @@ class PDFList:
             # Copy the file to the target folder
             pdf.save_to_file(target_file_path)
 
-    def create_new_filenames(self):
-        for doc in self.pdf_documents.values(): 
-            doc = doc.create_new_filename()
+    def create_new_filenames(self, format_str: str | None = None):
+        for doc in self.pdf_documents.values():
+            if format_str:
+                doc = doc.create_new_filename(format_str)
+            else:
+                doc = doc.create_new_filename()

@@ -62,6 +62,7 @@ Place your config at `~/.autoPDFtagger.conf`. Use `autoPDFtagger_example_config.
 - `[AI]` models for text/image/tag tasks and `text_threshold_words`
 - `[OCR]` language codes (e.g., `eng`, `deu+eng`) or disable
 - `[CACHE]` settings (enabled, ttl, directory)
+- `[EXPORT]` filename format using strftime + `{TITLE}`/`{CREATOR}` placeholders
 
 Default models (if values are missing) are:
 - Short text: `openai/gpt-5-mini`
@@ -117,7 +118,7 @@ autoPDFtagger textanalysis.json imageanalysis.json --ai-tag-analysis --json fina
 - When metadata is missing, it attempts to infer creation date and author/creator from content and context (OCR/AI).
 - Originals are never modified in place. Changes are applied only when exporting:
   - Files are copied to the chosen target folder (`-e/--export`).
-  - Copies can be renamed using detected metadata (e.g., `YYYY‑MM‑DD_short-title.pdf`).
+  - Copies can be renamed using detected metadata. The filename pattern is configurable via `[EXPORT].filename_format` (e.g., `%Y-%m-%d-{TITLE}.pdf` or `%Y%m%d-{CREATOR}-{TITLE}.pdf`).
   - Standard PDF metadata is written into the copy: Title, Summary (Subject), Author/Creator, and Tags (Keywords). Creation date is set when known.
 - You can still export JSON/CSV to audit or edit data before exporting PDFs.
 

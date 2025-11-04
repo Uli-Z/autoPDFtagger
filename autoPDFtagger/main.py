@@ -144,7 +144,13 @@ def main():
 
 
     if args.export is not None:
-        archive.file_list.create_new_filenames()
+        # Optional filename format from config (strftime + {TITLE}/{CREATOR})
+        try:
+            filename_format = config.get("EXPORT", "filename_format", fallback=None)
+            filename_format = filename_format.strip() if filename_format else None
+        except Exception:
+            filename_format = None
+        archive.file_list.create_new_filenames(filename_format)
         logging.info(f"Exporting files to {args.export}")
         archive.file_list.export_to_folder(args.export)
 
