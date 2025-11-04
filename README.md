@@ -53,9 +53,23 @@ autoPDFtagger ./pdf_archive -ftic -e ./out --json all.json
 - For cloud models: provider API key (e.g., `OPENAI_API_KEY`)
 
 ## Installation
-```shell
-pip install git+https://github.com/Uli-Z/autoPDFtagger
-```
+
+- pipx (empfohlen, systemweit ohne venv-Gefrickel):
+  - `python3 -m pip install --user pipx && python3 -m pipx ensurepath`
+  - `pipx install git+https://github.com/Uli-Z/autoPDFtagger`
+  - Aktualisieren: `pipx reinstall git+https://github.com/Uli-Z/autoPDFtagger`
+
+- Benutzerweit mit pip (ohne Admin-Rechte):
+  - `python3 -m pip install --user git+https://github.com/Uli-Z/autoPDFtagger`
+  - Stelle sicher, dass `~/.local/bin` im `PATH` ist (Bash/Zsh):
+    - `echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc && source ~/.bashrc`
+
+- Systemweit (Admin):
+  - `sudo -H python3 -m pip install git+https://github.com/Uli-Z/autoPDFtagger`
+
+- Verifikation nach Installation:
+  - `autoPDFtagger --help`
+  - Optional: `which autoPDFtagger`
 
 ## Configuration
 Place your config at `~/.autoPDFtagger.conf`. Use `autoPDFtagger_example_config.conf` as a starting point and adjust:
