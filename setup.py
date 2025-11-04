@@ -15,6 +15,7 @@ setup(
         "tenacity==8.2.3",
         "tiktoken>=0.4.0,<1",
         "litellm>=1.40.0",
+        "pdfminer.six>=20221105",
     ],
     entry_points={
         'console_scripts': [

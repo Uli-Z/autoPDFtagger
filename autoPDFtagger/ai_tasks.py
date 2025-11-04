@@ -614,10 +614,10 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
 
     try:
         try:
-            temp_str = config.get('AI', 'combined_temperature', fallback='0.8')
+            temp_str = config.get('AI', 'combined_temperature', fallback='1')
             temperature = float(temp_str)
         except Exception:
-            temperature = 0.8
+            temperature = 1.0
         answer, usage = run_vision(model, prompt="", images_b64=[], temperature=temperature, parts=parts)
         return _json_guard(answer), usage
     except Exception as e:
