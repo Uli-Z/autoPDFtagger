@@ -64,8 +64,8 @@ class autoPDFtagger:
         saved = 0.0  # cost avoided via cache
 
         # Read AI config for text analysis
-        ms = config.get('AI', 'text_model_short', fallback='')
-        ml = config.get('AI', 'text_model_long', fallback='')
+        ms = config.get('AI', 'text_model_short', fallback='openai/gpt-5-mini')
+        ml = config.get('AI', 'text_model_long', fallback='openai/gpt-5-nano')
         thr = int(config.get('AI', 'text_threshold_words', fallback='100'))
 
         for document in self.file_list.pdf_documents.values():
@@ -92,7 +92,7 @@ class autoPDFtagger:
         logging.info("Asking AI to analyze Images")
         costs = 0.0
         saved = 0.0
-        model = config.get('AI', 'image_model', fallback='')
+        model = config.get('AI', 'image_model', fallback='openai/gpt-5-nano')
         for document in self.file_list.pdf_documents.values():
             logging.info("... " + document.file_name)
             response, usage = ai_tasks.analyze_images(document, model)
@@ -153,10 +153,10 @@ class autoPDFtagger:
         totals = {"text_spent": 0.0, "text_saved": 0.0, "image_spent": 0.0, "image_saved": 0.0}
 
         # Read AI config once
-        ms = config.get('AI', 'text_model_short', fallback='')
-        ml = config.get('AI', 'text_model_long', fallback='')
+        ms = config.get('AI', 'text_model_short', fallback='openai/gpt-5-mini')
+        ml = config.get('AI', 'text_model_long', fallback='openai/gpt-5-nano')
         thr = int(config.get('AI', 'text_threshold_words', fallback='100'))
-        image_model = config.get('AI', 'image_model', fallback='')
+        image_model = config.get('AI', 'image_model', fallback='openai/gpt-5-nano')
 
         for document in self.file_list.pdf_documents.values():
             abs_path = document.get_absolute_path()

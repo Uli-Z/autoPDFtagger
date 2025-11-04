@@ -29,7 +29,8 @@ pip install -e .
 
 # 3) Create a config from the example
 cp autoPDFtagger_example_config.conf ~/.autoPDFtagger.conf
-#   Edit models/API keys inside if you use cloud providers
+#   Defaults use OpenAI models: short text = openai/gpt-5-mini, long text = openai/gpt-5-nano, images = openai/gpt-5-nano
+#   Set OPENAI_API_KEY in your environment (or put a key into the config's OPENAI-API section)
 
 # 4) Run on a folder and export
 autoPDFtagger ./pdf_archive -ftic -e ./out --json all.json
@@ -50,6 +51,11 @@ Place your config at `~/.autoPDFtagger.conf`. Use `autoPDFtagger_example_config.
 - `[AI]` models for text/image/tag tasks and `text_threshold_words`
 - `[OCR]` language codes (e.g., `eng`, `deu+eng`) or disable
 - `[CACHE]` settings (enabled, ttl, directory)
+
+Default models (if values are missing) are:
+- Short text: `openai/gpt-5-mini`
+- Long text: `openai/gpt-5-nano`
+- Images: `openai/gpt-5-nano`
 
 ### Image Analysis Strategy
 
