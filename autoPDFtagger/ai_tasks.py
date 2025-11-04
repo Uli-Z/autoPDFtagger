@@ -414,6 +414,220 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
         return None, {"cost": 0.0}
 
 
+def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optional[str] = None) -> Tuple[Optional[str], Dict[str, Any]]:
+    """Analyze the full document by sending all text and all images together.
+
+    Returns (json_str, usage).
+    When visual_debug_path is provided, performs a dry-run: generates the
+    illustrative PDF only and skips any real AI requests.
+    Best-effort preserves the reading order: page-by-page text, and images
+    appended in the same sequence as they appear within each page.
+    """
+    dry_run = visual_debug_path is not None or not model
+    if not model and not visual_debug_path:
+        logging.info("Combined analysis skipped (no model configured)")
+        return None, {"cost": 0.0}
+
+    # Optional: allow using mock provider for deterministic tests
+    if mock_provider.is_mock_model(model):
+        response, usage = mock_provider.fetch(doc, "combined", context={})
+        return response, usage
+
+    # Read knobs from config
+    try:
+        context_max_chars = int(config.get('AI', 'combined_text_max_chars', fallback='6000'))
+    except Exception:
+        context_max_chars = 6000
+    try:
+        max_images = int(config.get('AI', 'combined_max_images_per_pdf', fallback='12'))
+    except Exception:
+        max_images = 12
+    try:
+        image_render_max_px = int(config.get('AI', 'image_render_max_px', fallback='1536'))
+    except Exception:
+        image_render_max_px = 1536
+    exclude_small = _cfg_bool('AI', 'combined_exclude_small_icons', fallback='true')
+    try:
+        min_icon_edge_cm = float(config.get('AI', 'min_icon_edge_cm', fallback='2.0'))
+    except Exception:
+        min_icon_edge_cm = 2.0
+
+    def _truncate(text: str, n: int) -> str:
+        text = (text or "").strip()
+        return text if n <= 0 or len(text) <= n else (text[:n] + "…")
+
+    # Build sequential text per page (forcing OCR per-page if needed for best quality)
+    page_texts: List[str] = []
+    try:
+        # doc.pages is built by analyze_document_images(); but use get_page_text to ensure OCR if necessary
+        # Try to detect page count by probing until empty; better approach requires opening fitz here, so reuse existing helper
+        doc.analyze_document_images()
+        page_count = len(getattr(doc, 'pages', []) or [])
+    except Exception:
+        page_count = 0
+
+    if page_count <= 0:
+        # Fallback: use the flattened document text
+        flat = doc.get_pdf_text() or ""
+        page_texts = [flat]
+    else:
+        for idx in range(page_count):
+            t = doc.get_page_text(idx, use_ocr_if_needed=True)
+            page_texts.append(t or "")
+
+    # Prepare all images in strict page order; filter very small icons if configured
+    images_b64: List[str] = []
+    image_manifest_lines: List[str] = []
+    if getattr(doc, 'images', None) is None or not doc.images:
+        try:
+            doc.analyze_document_images()
+        except Exception:
+            pass
+    if getattr(doc, 'images', None):
+        count_added = 0
+        for p_idx, page_images in enumerate(doc.images):
+            for i_idx, img in enumerate(page_images or []):
+                try:
+                    w_cm = PDFDocument._points_to_cm(float(img.get('width', 0.0) or 0.0))  # type: ignore[attr-defined]
+                    h_cm = PDFDocument._points_to_cm(float(img.get('height', 0.0) or 0.0))  # type: ignore[attr-defined]
+                    is_small = min(w_cm, h_cm) < float(min_icon_edge_cm)
+                except Exception:
+                    is_small = False
+                if exclude_small and is_small:
+                    continue
+                xref = img.get('xref')
+                b64 = None
+                if xref:
+                    b64 = doc.render_image_region_png_base64(int(xref), max_px=image_render_max_px)
+                    if not b64:
+                        b64 = doc.get_png_image_base64_by_xref(int(xref))
+                if b64:
+                    images_b64.append(b64)
+                    image_manifest_lines.append(f"[IMG {len(images_b64)}] page={p_idx+1} index_on_page={i_idx+1} xref={xref}")
+                    count_added += 1
+                    if max_images > 0 and count_added >= max_images:
+                        break
+            if max_images > 0 and len(images_b64) >= max_images:
+                break
+
+    # Compose a single prompt that includes the sequential text and an image manifest
+    # The images are uploaded in the same order as the manifest lines.
+    per_page_blocks: List[str] = []
+    if page_count > 0:
+        for idx, txt in enumerate(page_texts, start=1):
+            per_page_blocks.append(f"Page {idx} text:\n" + _truncate(txt, context_max_chars))
+    else:
+        per_page_blocks.append("Document text:\n" + _truncate(page_texts[0] if page_texts else "", context_max_chars))
+
+    prompt = (
+        "You are a helpful assistant analyzing full documents combining text and images. "
+        "Use ALL provided information to infer: creation_date, a short title (3-4 words), "
+        "a meaningful summary (3-4 sentences), creator/issuer, suitable tags (list), an importance score (0-10), "
+        "and a confidence (0-10) for each field. "
+        f"Always answer in {_lang()} and output a single JSON object with the same structure used previously.\n\n"
+        "Existing document context (to be extended consistently):\n" + doc.to_api_json() + "\n\n"
+        "The following sequential text transcript is provided in strict page order.\n" +
+        "\n\n".join(per_page_blocks) + "\n\n" +
+        ("Images are attached below in the exact order listed; each line maps an image to its page: \n" + "\n".join(image_manifest_lines) + "\n\n" if images_b64 else "") +
+        "When images are present, correlate them with nearby page text using the page numbers in the manifest. "
+        "Return only the final JSON object without extra commentary."
+    )
+
+    # Optional: write a visual debug PDF illustrating the prompt + image order
+    if visual_debug_path:
+        try:
+            _write_visual_debug_pdf(
+                visual_debug_path,
+                doc,
+                prompt,
+                per_page_blocks,
+                image_manifest_lines,
+                images_b64,
+                raw_page_texts=page_texts,
+            )
+            logging.info("Wrote visual debug PDF: %s", visual_debug_path)
+        except Exception as _e:
+            logging.warning("Failed to write visual debug PDF '%s': %s", visual_debug_path, _e)
+
+    if dry_run:
+        # Skip any actual AI request when visual-debug is active (or model missing)
+        return None, {"cost": 0.0, "dry_run": True, "skipped_reason": ("visual_debug" if visual_debug_path else "no_model")}
+
+    try:
+        try:
+            temp_str = config.get('AI', 'combined_temperature', fallback='0.8')
+            temperature = float(temp_str)
+        except Exception:
+            temperature = 0.8
+        answer, usage = run_vision(model, prompt, images_b64, temperature=temperature)
+        return _json_guard(answer), usage
+    except Exception as e:
+        logging.warning(f"Combined analysis failed: {e}")
+        return None, {"cost": 0.0}
+
+
+def _write_visual_debug_pdf(output_path: str, doc: PDFDocument, prompt: str, per_page_blocks: List[str], manifest_lines: List[str], images_b64: List[str], raw_page_texts: Optional[List[str]] = None) -> None:
+    import os
+    import io
+    import base64
+    import fitz  # PyMuPDF
+
+    # Ensure directory exists
+    out_dir = os.path.dirname(os.path.abspath(output_path))
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    pdf = fitz.open()
+
+    def add_text_pages(title: str, text: str) -> None:
+        # Split long text into chunks and write across multiple pages
+        chunk_size = 3500  # rough; insert_textbox may still wrap within page
+        chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)] or [""]
+        for idx, chunk in enumerate(chunks, start=1):
+            page = pdf.new_page(width=595, height=842)  # A4 portrait
+            margin = 36
+            rect = fitz.Rect(margin, margin, 595 - margin, 842 - margin)
+            header = f"{title} (part {idx}/{len(chunks)})\nFile: {doc.file_name}\n"
+            _ = page.insert_textbox(rect, header + chunk, fontsize=10, fontname="helv", color=(0, 0, 0))
+
+    # Page 1..N: Prompt and per-page text summary
+    per_page_text = "\n\n".join(per_page_blocks)
+    add_text_pages("Combined Prompt", prompt + "\n\n---\n\nPer-page text blocks (as sent):\n\n" + per_page_text)
+
+    # Manifest page
+    manifest_text = "\n".join(manifest_lines) if manifest_lines else "(no images)"
+    add_text_pages("Image Manifest (order as sent)", manifest_text)
+
+    # Optional: one section per source page to make text visibility explicit
+    if raw_page_texts:
+        for i, txt in enumerate(raw_page_texts, start=1):
+            add_text_pages(f"Source Page {i} Text (chars: {len(txt)})", txt or "")
+
+    # Image pages: one image per page with a caption
+    for idx, b64 in enumerate(images_b64, start=1):
+        try:
+            img_bytes = base64.b64decode(b64)
+        except Exception:
+            img_bytes = b""
+        caption = manifest_lines[idx-1] if idx-1 < len(manifest_lines) else f"[IMG {idx}]"
+        page = pdf.new_page(width=595, height=842)
+        margin = 36
+        caption_rect = fitz.Rect(margin, margin, 595 - margin, margin + 60)
+        page.insert_textbox(caption_rect, f"{caption}\n(base64 length: {len(b64)})", fontsize=10, fontname="helv", color=(0, 0, 0))
+
+        # Image rectangle (below caption)
+        img_top = margin + 70
+        img_rect = fitz.Rect(margin, img_top, 595 - margin, 842 - margin)
+        try:
+            page.insert_image(img_rect, stream=img_bytes, keep_proportion=True)
+        except Exception:
+            # If insertion fails, leave a note
+            page.insert_textbox(img_rect, "[Failed to render image]", fontsize=12, fontname="helv", color=(1, 0, 0))
+
+    pdf.save(output_path)
+    pdf.close()
+
+
 def analyze_tags(tags: List[str], model: str = "") -> Tuple[List[Dict[str, str]], Dict[str, Any]]:
     """Suggest tag replacements/unification.
     Returns (replacements, usage). If model empty, returns identity mapping and zero cost.

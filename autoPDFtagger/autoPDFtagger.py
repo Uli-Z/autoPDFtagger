@@ -11,12 +11,13 @@ from autoPDFtagger.PDFDocument import PDFDocument
 from autoPDFtagger.job_manager import JobManager, Job
 
 class autoPDFtagger:
-    def __init__(self, ocr_runner=None, ai_log_path=None):
+    def __init__(self, ocr_runner=None, ai_log_path=None, visual_debug_path=None):
         self.ai = None
         self.file_list = PDFList()
         PDFDocument.configure_ocr(ocr_runner)
         mock_provider.reset()
         self._ai_response_log_path = ai_log_path
+        self._visual_debug_path = visual_debug_path
 
     # Add file to database
     def add_file(self, path: str, base_dir = None):
@@ -117,6 +118,7 @@ class autoPDFtagger:
         do_text: bool,
         do_image: bool,
         enable_ocr: bool,
+        do_combined: bool = False,
     ) -> None:
         """Run requested jobs with configurable concurrency and dependencies.
 
@@ -125,7 +127,7 @@ class autoPDFtagger:
         - Text jobs depend on OCR job for the same document when OCR is enabled.
         - Periodically logs a status overview (pending/running/done/failed per kind).
         """
-        if not (do_text or do_image):
+        if not (do_text or do_image or do_combined):
             return
 
         # Read concurrency settings
@@ -150,13 +152,14 @@ class autoPDFtagger:
 
         # Shared cost accumulators
         lock = threading.Lock()
-        totals = {"text_spent": 0.0, "text_saved": 0.0, "image_spent": 0.0, "image_saved": 0.0}
+        totals = {"text_spent": 0.0, "text_saved": 0.0, "image_spent": 0.0, "image_saved": 0.0, "combined_spent": 0.0, "combined_saved": 0.0}
 
         # Read AI config once
         ms = config.get('AI', 'text_model_short', fallback='openai/gpt-5-mini')
         ml = config.get('AI', 'text_model_long', fallback='openai/gpt-5-nano')
         thr = int(config.get('AI', 'text_threshold_words', fallback='100'))
         image_model = config.get('AI', 'image_model', fallback='openai/gpt-5-nano')
+        combined_model = config.get('AI', 'combined_model', fallback=image_model)
 
         for document in self.file_list.pdf_documents.values():
             abs_path = document.get_absolute_path()
@@ -202,6 +205,31 @@ class autoPDFtagger:
                 # Image analysis does not require OCR; keep independent
                 jm.add_job(Job(id=f"image:{abs_path}", kind="image", run=_make_img()))
 
+            # Combined job (text + images in one request)
+            if do_combined:
+                def _make_combined(doc=document):
+                    def _run():
+                        try:
+                            logging.info("[AI combined] %s", doc.file_name)
+                            response, usage = ai_tasks.analyze_combined(doc, combined_model, visual_debug_path=self._visual_debug_path)
+                            self._log_ai_response("combined", doc, response, usage)
+                            if response:
+                                doc.set_from_json(response)
+                            with lock:
+                                totals["combined_spent"] += float((usage or {}).get('cost', 0.0) or 0.0)
+                                totals["combined_saved"] += float((usage or {}).get('saved_cost', 0.0) or 0.0)
+                            c = float((usage or {}).get('cost', 0.0) or 0.0)
+                            s = float((usage or {}).get('saved_cost', 0.0) or 0.0)
+                            if c or s:
+                                logging.info("[AI combined cost] %s :: spent=%.4f $, saved=%.4f $", doc.file_name, c, s)
+                            logging.info("[AI combined done] %s", doc.file_name)
+                        except Exception as exc:
+                            logging.error("Combined analysis failed for %s: %s", doc.file_name, exc)
+                            raise
+                    return _run
+                deps = [ocr_id] if enable_ocr else []
+                jm.add_job(Job(id=f"combined:{abs_path}", kind="combined", run=_make_combined(), deps=deps))
+
             if do_text:
                 def _make_text(doc=document):
                     def _run():
@@ -242,6 +270,11 @@ class autoPDFtagger:
             logging.info(
                 "Spent %.2f $ for image analysis (saved %.2f $ via cache)",
                 totals["image_spent"], totals["image_saved"],
+            )
+        if do_combined:
+            logging.info(
+                "Spent %.2f $ for combined analysis (saved %.2f $ via cache)",
+                totals["combined_spent"], totals["combined_saved"],
             )
 
     # Simplify and unify tags over all documents in the database

@@ -28,6 +28,11 @@ try:
             litellm.set_verbose(False)  # type: ignore[attr-defined]
     except Exception:
         pass
+    # Prefer robust behavior across providers: always drop unsupported params
+    try:
+        litellm.drop_params = True  # type: ignore[attr-defined]
+    except Exception:
+        pass
 except Exception:  # pragma: no cover - tests will monkeypatch call sites
     litellm = None  # type: ignore
     completion = None  # type: ignore
@@ -311,10 +316,21 @@ def run_vision(
     for b64 in images_b64:
         content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
 
+    # Clamp parameters for known provider/model quirks (e.g., GPT-5 requires temperature=1.0)
+    effective_temperature = float(temperature)
+    model_name = model.lower()
+    if "gpt-5" in model_name and abs(effective_temperature - 1.0) > 1e-6:
+        logging.debug(
+            "Clamping temperature to 1.0 for model '%s' (requested %.3f)",
+            model,
+            effective_temperature,
+        )
+        effective_temperature = 1.0
+
     kwargs: Dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": content}],
-        "temperature": temperature,
+        "temperature": effective_temperature,
     }
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens

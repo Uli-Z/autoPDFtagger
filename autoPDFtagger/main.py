@@ -21,6 +21,7 @@ def main():
     parser.add_argument("-f", "--file-analysis", help="Try to conventionally extract metadata from file, file name and folder structure", action="store_true")   
     parser.add_argument("-t", "--ai-text-analysis", help="Do an AI text analysis", action="store_true")     
     parser.add_argument("-i", "--ai-image-analysis", help="Do an AI image analysis", action="store_true")
+    parser.add_argument("-m", "--ai-combined-analysis", help="Do a combined AI analysis (text + images in one request)", action="store_true")
     parser.add_argument("-c", "--ai-tag-analysis", help="Do an AI tag analysis", action="store_true")
     parser.add_argument("-e", "--export", help="Copy Documents to a target folder", nargs='?', default=None, const=None)
     parser.add_argument("-l", "--list", help="List documents stored in database", action="store_true")
@@ -31,6 +32,7 @@ def main():
     parser.add_argument("--no-ocr", dest="ocr", action="store_false", help="Force-disable OCR regardless of configuration")
     parser.add_argument("--ocr-languages", help="Override Tesseract language codes (e.g. 'deu+eng')")
     parser.add_argument("--debug-ai-log", help="Append raw AI JSON responses to the given log file", default=None)
+    parser.add_argument("--visual-debug", help="Write a PDF illustrating the combined request (prompt + image order)", default=None)
     parser.add_argument("--no-cache", action="store_true", help="Disable on-disk cache for OCR and AI calls")
     parser.set_defaults(ocr=None)
 
@@ -76,7 +78,7 @@ def main():
     cache.configure(enabled=(enabled and not args.no_cache), ttl_seconds=ttl_seconds, base_dir=cache_dir)
     logging.debug("Cache configured: enabled=%s, ttl=%ss, dir=%s", str(enabled and not args.no_cache), ttl_seconds, cache_dir or "~/.autoPDFtagger/cache")
 
-    archive = autoPDFtagger(ocr_runner=ocr_setup.runner, ai_log_path=args.debug_ai_log)
+    archive = autoPDFtagger(ocr_runner=ocr_setup.runner, ai_log_path=args.debug_ai_log, visual_debug_path=args.visual_debug)
 
     # Read JSON from StdIn
     def stdin_has_data():
@@ -116,16 +118,18 @@ def main():
         return args.export is not None or hasattr(args, "json") or args.csv is not None
 
     # Parallel job execution for AI + OCR based on configuration
-    if args.ai_text_analysis or args.ai_image_analysis:
+    if args.ai_text_analysis or args.ai_image_analysis or args.ai_combined_analysis:
         if is_output_option_set():
             # If image analysis is requested, follow up with text analysis automatically
-            do_image = bool(args.ai_image_analysis)
-            do_text = bool(args.ai_text_analysis or args.ai_image_analysis)
+            do_combined = bool(args.ai_combined_analysis)
+            do_image = bool(args.ai_image_analysis and not do_combined)
+            do_text = bool((args.ai_text_analysis or args.ai_image_analysis) and not do_combined)
             # Enable OCR when any text analysis is planned and an OCR runner is available
-            enable_ocr = bool(ocr_setup.runner) and do_text
+            enable_ocr = bool(ocr_setup.runner) and (do_text or do_combined)
             archive.run_jobs_parallel(
                 do_text=do_text,
                 do_image=do_image,
+                do_combined=do_combined,
                 enable_ocr=enable_ocr,
             )
         else:
