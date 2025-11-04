@@ -10,6 +10,7 @@ autoPDFtagger is a CLI for semi‑automatic classification, sorting, and tagging
 - Vision analysis for embedded images and scans with page‑local context
 - Smart image prioritization with a per‑PDF cap for predictable runtime/costs
 - Writes standard PDF metadata and exports JSON/CSV (no proprietary DB)
+- AI‑assisted tag normalization/unification across the database
 - Multi‑provider via LiteLLM (tested with OpenAI; local LLMs are supported in principle, but current vision quality may vary)
 - 24h on‑disk cache with cost spent/saved reporting
 
@@ -85,6 +86,11 @@ autoPDFtagger allfiles.json --ai-text-analysis --json textanalysis.json
 Run AI image analysis for low‑quality entries and merge:
 ```shell
 autoPDFtagger textanalysis.json --keep-below --ai-image-analysis --json imageanalysis.json
+```
+
+Normalize tags across the database with AI:
+```shell
+autoPDFtagger textanalysis.json imageanalysis.json --ai-tag-analysis --json final.json
 ```
 
 
