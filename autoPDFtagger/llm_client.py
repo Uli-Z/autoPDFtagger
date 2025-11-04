@@ -159,7 +159,11 @@ def run_chat(
     Returns (text, usage) where usage optionally includes a computed 'cost'.
     """
     if completion is None:
-        raise RuntimeError("litellm not installed; cannot call run_chat without monkeypatching.")
+        raise RuntimeError(
+            "LiteLLM (package 'litellm') is not installed. "
+            "Install it in the same environment as autoPDFtagger (e.g. 'python -m pip install litellm>=1.40.0') "
+            "or activate the virtualenv you used to install autoPDFtagger before running."
+        )
 
     _ensure_env_for_provider(model)
 
@@ -270,7 +274,11 @@ def run_vision(
         return "", {"cost": 0.0}
 
     if completion is None:
-        raise RuntimeError("litellm not installed; cannot call run_vision without monkeypatching.")
+        raise RuntimeError(
+            "LiteLLM (package 'litellm') is not installed. "
+            "Install it in the same environment as autoPDFtagger (e.g. 'python -m pip install litellm>=1.40.0') "
+            "or activate the virtualenv you used to install autoPDFtagger before running."
+        )
 
     _ensure_env_for_provider(model)
 
