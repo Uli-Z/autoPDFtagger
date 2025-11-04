@@ -7,6 +7,8 @@ from autoPDFtagger import ai_tasks
 from autoPDFtagger.ai_tasks import ImageCandidate
 from autoPDFtagger.config import config
 from autoPDFtagger.PDFDocument import PDFDocument
+from autoPDFtagger import llm_client
+
 
 
 class _StubTextDoc:
@@ -92,6 +94,44 @@ def test_analyze_tags_parses_and_cleans(monkeypatch):
         tuple(sorted({"original": " Alpha ", "replacement": "alpha"}.items())),
         tuple(sorted({"original": "123", "replacement": "456"}.items())),
     }
+
+
+def test_analyze_tags_uses_chat_cache(monkeypatch):
+    # Configure a real provider-like model so run_chat path is used
+    config.set("AI", "tag_model", "openai/gpt-4o-mini")
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+
+    # Back a simple in-memory cache to avoid filesystem writes
+    store = {}
+
+    def fake_cache_get(bucket, key):
+        return store.get((bucket, key))
+
+    def fake_cache_set(bucket, key, data):
+        store[(bucket, key)] = data
+
+    monkeypatch.setattr(llm_client, "cache", type("C", (), {"get": staticmethod(fake_cache_get), "set": staticmethod(fake_cache_set)}))
+
+    # Count underlying provider calls via completion()
+    calls = {"n": 0}
+
+    def fake_completion(**kwargs):
+        calls["n"] += 1
+        return {
+            "choices": [{"message": {"content": "[{\"original\": \"a\", \"replacement\": \"A\"}]"}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+
+    monkeypatch.setattr(llm_client, "completion", fake_completion)
+
+    # First call populates cache
+    repl1, usage1 = ai_tasks.analyze_tags(["b", "a", "a"], model=config.get("AI", "tag_model"))
+    assert calls["n"] == 1
+    # Second call with equivalent tag set but different order hits cache
+    repl2, usage2 = ai_tasks.analyze_tags(["a", "b"], model=config.get("AI", "tag_model"))
+    assert calls["n"] == 1, "second call should be served from cache"
+    assert usage2.get("cache_hit") is True
+    assert repl1 == repl2
 
 
 def test_json_guard_extracts_embedded_json():

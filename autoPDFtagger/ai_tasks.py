@@ -422,6 +422,12 @@ def analyze_tags(tags: List[str], model: str = "") -> Tuple[List[Dict[str, str]]
         logging.info("Tag analysis skipped (no model configured)")
         return [], {"cost": 0.0}
 
+    # Ensure deterministic input for caching: sort and deduplicate tags
+    try:
+        tags = sorted({str(t).strip() for t in tags if str(t).strip()})
+    except Exception:
+        tags = list(tags)
+
     system = (
         "You are a helpful assistant for unifying and normalizing tags/keywords. "
         f"Always answer in {_lang()}. Output must be a JSON list of objects with keys 'original' and 'replacement'."
