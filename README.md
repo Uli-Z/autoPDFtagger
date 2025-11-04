@@ -191,13 +191,6 @@ Functional CLI with solid results; ongoing improvements in testing, prompt optim
 ## Contributing
 Contributions welcome — issues and PRs appreciated.
 
-## Future Development
-
-- Cost control and monitoring improvements
-- Optional UI and lightweight viewer app
-- Expanded provider support and compatibility with tools like paperless‑ngx
-- Tag organization and clustering on embeddings
-
 ## License
 
 GPL-3
