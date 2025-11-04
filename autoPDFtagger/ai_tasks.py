@@ -475,100 +475,139 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             t = doc.get_page_text(idx, use_ocr_if_needed=True)
             page_texts.append(t or "")
 
-    # Build ordered elements (text/images) using pdfminer; fallback to page-wise if pdfminer missing
+    # Build ordered elements (text/images/figures) using pdfminer, keep reading order
     elements: List[Dict[str, Any]] = []
     image_manifest_lines: List[str] = []
     images_b64: List[str] = []
+
+    from pdfminer.high_level import extract_pages
+    from pdfminer.layout import (
+        LTImage,
+        LTFigure,
+        LTTextContainer,
+        LAParams,
+        LTLine,
+        LTRect,
+        LTCurve,
+    )
+
+    laparams = LAParams()
+
+    def _iter_layout(obj):
+        if hasattr(obj, "_objs") and isinstance(getattr(obj, "_objs"), list):
+            for o in obj._objs:  # type: ignore[attr-defined]
+                yield o
+
+    def _collect(container, page_number: int):
+        items = []
+        stack = list(_iter_layout(container))
+        img_idx = 0
+        while stack:
+            o = stack.pop(0)
+            if isinstance(o, LTTextContainer):
+                t = (o.get_text() or "").strip()
+                if t:
+                    items.append(("text", o.bbox, t, None))
+            elif isinstance(o, LTImage):
+                img_idx += 1
+                items.append(("image", o.bbox, None, {"page": page_number, "idx": img_idx}))
+            elif isinstance(o, LTFigure):
+                # Keep figure as a single item for heuristic processing; don't descend now
+                items.append(("figure", o.bbox, None, o))
+            else:
+                # Generic container: descend
+                stack[0:0] = list(_iter_layout(o))
+        # top-down then left-right
+        items.sort(key=lambda it: (-it[1][3], it[1][0]))
+        return items
+
+    def _figure_metrics(fig) -> Dict[str, int]:
+        words = 0
+        imgs = 0
+        shapes = 0
+        stack = list(_iter_layout(fig))
+        while stack:
+            o = stack.pop(0)
+            if isinstance(o, LTTextContainer):
+                txt = (o.get_text() or "").strip()
+                words += len(txt.split())
+            elif isinstance(o, LTImage):
+                imgs += 1
+            elif isinstance(o, (LTLine, LTRect, LTCurve)):
+                shapes += 1
+            elif isinstance(o, LTFigure):
+                stack[0:0] = list(_iter_layout(o))
+            else:
+                stack[0:0] = list(_iter_layout(o))
+        return {"words": words, "images": imgs, "shapes": shapes}
+
     try:
-        from pdfminer.high_level import extract_pages
-        from pdfminer.layout import LTImage, LTFigure, LTTextContainer, LAParams
+        max_words_in_figure = int(config.get('AI', 'combined_figure_max_words', fallback='20'))
+    except Exception:
+        max_words_in_figure = 20
+    try:
+        min_shapes_in_figure = int(config.get('AI', 'combined_figure_min_shapes', fallback='2'))
+    except Exception:
+        min_shapes_in_figure = 2
+    capture_figures = _cfg_bool('AI', 'combined_capture_figures', fallback='true')
 
-        laparams = LAParams()
-
-        def _iter_layout(obj):
-            if hasattr(obj, "_objs") and isinstance(getattr(obj, "_objs"), list):
-                for o in obj._objs:  # type: ignore[attr-defined]
-                    yield o
-
-        def _collect(page_layout, page_number: int):
-            items = []
-            stack = list(_iter_layout(page_layout))
-            img_idx = 0
-            while stack:
-                o = stack.pop(0)
-                if isinstance(o, LTTextContainer):
-                    t = (o.get_text() or "").strip()
-                    if t:
-                        items.append(("text", o.bbox, t, None))
-                elif isinstance(o, LTImage):
-                    img_idx += 1
-                    items.append(("image", o.bbox, None, {"page": page_number, "idx": img_idx}))
-                elif isinstance(o, LTFigure):
-                    stack[0:0] = list(_iter_layout(o))
-                else:
-                    stack[0:0] = list(_iter_layout(o))
-            items.sort(key=lambda it: (-it[1][3], it[1][0]))
-            return items
-
-        total_images = 0
-        for page_no, layout in enumerate(extract_pages(doc.get_absolute_path(), laparams=laparams), start=1):
-            page_items = _collect(layout, page_no)
-            for kind, bbox, text, meta in page_items:
-                if kind == "text":
-                    elements.append({"type": "text", "text": text, "page": page_no})
-                else:
+    total_visuals = 0
+    for page_no, layout in enumerate(extract_pages(doc.get_absolute_path(), laparams=laparams), start=1):
+        page_items = _collect(layout, page_no)
+        i = 0
+        while i < len(page_items):
+            kind, bbox, text, meta = page_items[i]
+            if kind == "text":
+                elements.append({"type": "text", "text": text, "page": page_no})
+                i += 1
+                continue
+            if kind == "image":
+                try:
+                    w_cm = PDFDocument._points_to_cm(float(bbox[2] - bbox[0]))  # type: ignore[attr-defined]
+                    h_cm = PDFDocument._points_to_cm(float(bbox[3] - bbox[1]))  # type: ignore[attr-defined]
+                    is_small = min(w_cm, h_cm) < float(min_icon_edge_cm)
+                except Exception:
+                    is_small = False
+                if not (exclude_small and is_small):
+                    if not max_images or total_visuals < max_images:
+                        b64 = doc.render_page_region_png_base64(page_no - 1, bbox, max_px=image_render_max_px, coords="pdfminer")
+                        if b64:
+                            total_visuals += 1
+                            images_b64.append(b64)
+                            image_manifest_lines.append(f"[IMG {total_visuals}] page={page_no} bbox=({bbox[0]:.1f},{bbox[1]:.1f},{bbox[2]:.1f},{bbox[3]:.1f})")
+                            elements.append({"type": "image", "b64": b64, "page": page_no})
+                i += 1
+                continue
+            if kind == "figure":
+                fig = meta
+                take = False
+                if capture_figures:
+                    m = _figure_metrics(fig)
                     try:
                         w_cm = PDFDocument._points_to_cm(float(bbox[2] - bbox[0]))  # type: ignore[attr-defined]
                         h_cm = PDFDocument._points_to_cm(float(bbox[3] - bbox[1]))  # type: ignore[attr-defined]
-                        is_small = min(w_cm, h_cm) < float(min_icon_edge_cm)
+                        big_enough = min(w_cm, h_cm) >= float(min_icon_edge_cm)
                     except Exception:
-                        is_small = False
-                    if exclude_small and is_small:
-                        continue
-                    if max_images and total_images >= max_images:
-                        continue
+                        big_enough = True
+                    take = big_enough and (m.get("shapes", 0) >= min_shapes_in_figure) and (m.get("words", 0) <= max_words_in_figure)
+                if take and (not max_images or total_visuals < max_images):
                     b64 = doc.render_page_region_png_base64(page_no - 1, bbox, max_px=image_render_max_px, coords="pdfminer")
                     if b64:
-                        total_images += 1
+                        total_visuals += 1
                         images_b64.append(b64)
-                        image_manifest_lines.append(f"[IMG {total_images}] page={page_no} bbox=({bbox[0]:.1f},{bbox[1]:.1f},{bbox[2]:.1f},{bbox[3]:.1f})")
+                        image_manifest_lines.append(
+                            f"[FIG {total_visuals}] page={page_no} bbox=({bbox[0]:.1f},{bbox[1]:.1f},{bbox[2]:.1f},{bbox[3]:.1f})"
+                        )
                         elements.append({"type": "image", "b64": b64, "page": page_no})
-    except Exception as exc:
-        logging.warning("pdfminer unavailable or failed (%s); falling back to page-text + page-ordered images.", exc)
-        if getattr(doc, 'images', None) is None or not doc.images:
-            try:
-                doc.analyze_document_images()
-            except Exception:
-                pass
-        if getattr(doc, 'images', None):
-            count_added = 0
-            for p_idx, page_images in enumerate(doc.images):
-                # Insert page text element first
-                t = page_texts[p_idx] if p_idx < len(page_texts) else ""
-                if t:
-                    elements.append({"type": "text", "text": t, "page": p_idx + 1})
-                for i_idx, img in enumerate(page_images or []):
-                    try:
-                        w_cm = PDFDocument._points_to_cm(float(img.get('width', 0.0) or 0.0))  # type: ignore[attr-defined]
-                        h_cm = PDFDocument._points_to_cm(float(img.get('height', 0.0) or 0.0))  # type: ignore[attr-defined]
-                        is_small = min(w_cm, h_cm) < float(min_icon_edge_cm)
-                    except Exception:
-                        is_small = False
-                    if exclude_small and is_small:
-                        continue
-                    if max_images and count_added >= max_images:
-                        break
-                    xref = img.get('xref')
-                    b64 = None
-                    if xref:
-                        b64 = doc.render_image_region_png_base64(int(xref), max_px=image_render_max_px)
-                        if not b64:
-                            b64 = doc.get_png_image_base64_by_xref(int(xref))
-                    if b64:
-                        images_b64.append(b64)
-                        count_added += 1
-                        image_manifest_lines.append(f"[IMG {count_added}] page={p_idx+1} index_on_page={i_idx+1} xref={xref}")
-                        elements.append({"type": "image", "b64": b64, "page": p_idx + 1})
+                    # Do not descend into children when captured to avoid duplicates
+                    i += 1
+                else:
+                    # Expand figure inline: replace current with collected children
+                    inner = _collect(fig, page_no)
+                    page_items[i:i+1] = inner
+                continue
+            # Unknown kind: skip
+            i += 1
 
     # Prepare mixed parts preserving order
     parts: List[Dict[str, Any]] = []
