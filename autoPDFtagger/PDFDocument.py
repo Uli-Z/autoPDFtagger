@@ -451,6 +451,40 @@ class PDFDocument:
             logging.error(f"Error rendering page to PNG: {e}")
             return None
 
+    def render_page_region_png_base64(self, page_index: int, bbox: tuple, max_px: int = 1024, coords: str = "pdfminer"):
+        """
+        Render a rectangular region of the page to a PNG base64.
+        - bbox: (x0, y0, x1, y1)
+        - coords: 'pdfminer' (origin bottom-left) or 'fitz' (origin top-left)
+        """
+        try:
+            pdf_path = self.get_absolute_path()
+            pdf_document = fitz.open(pdf_path)
+            if page_index < 0 or page_index >= len(pdf_document):
+                pdf_document.close()
+                return None
+            page = pdf_document[page_index]
+            x0, y0, x1, y1 = bbox
+            if coords == "pdfminer":
+                height = page.rect.height
+                # Convert pdfminer (bottom-left origin) to fitz (top-left origin)
+                y0_new = height - y1
+                y1_new = height - y0
+                rect = fitz.Rect(float(x0), float(y0_new), float(x1), float(y1_new))
+            else:
+                rect = fitz.Rect(float(x0), float(y0), float(x1), float(y1))
+            longest = max(rect.width, rect.height)
+            scale = min(1.0, float(max_px) / float(longest)) if max_px and longest > 0 else 1.0
+            mat = fitz.Matrix(scale, scale)
+            pix = page.get_pixmap(matrix=mat, clip=rect)
+            img_bytes = pix.tobytes("png")
+            encoded_image = base64.b64encode(img_bytes).decode()
+            pdf_document.close()
+            return encoded_image
+        except Exception as e:
+            logging.error(f"Error rendering page region to PNG: {e}")
+            return None
+
     def get_page_text(self, page_index: int, use_ocr_if_needed: bool = True) -> str:
         """
         Returns the text content of a single page. If the page has no text layer

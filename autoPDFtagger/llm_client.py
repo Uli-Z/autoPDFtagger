@@ -272,6 +272,7 @@ def run_vision(
     images_b64: List[str],
     temperature: float = 0.8,
     max_tokens: Optional[int] = None,
+    parts: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     """Run a vision-capable chat with image inputs. Raises RuntimeError if unsupported.
     """
@@ -287,18 +288,36 @@ def run_vision(
 
     _ensure_env_for_provider(model)
 
-    # Cache lookup based on prompt + image hashes
+    # Cache lookup based on prompt + image hashes OR direct parts list
     try:
-        image_hashes = [hashlib.sha256((b64 or "").encode("utf-8")).hexdigest() for b64 in images_b64]
-        key_obj = {
-            "v": 1,
-            "type": "vision",
-            "model": model,
-            "temperature": float(temperature) if temperature is not None else None,
-            "max_tokens": int(max_tokens) if max_tokens is not None else None,
-            "prompt": prompt,
-            "images": image_hashes,
-        }
+        if parts is None:
+            image_hashes = [hashlib.sha256((b64 or "").encode("utf-8")).hexdigest() for b64 in images_b64]
+            key_obj = {
+                "v": 2,
+                "type": "vision",
+                "model": model,
+                "temperature": float(temperature) if temperature is not None else None,
+                "max_tokens": int(max_tokens) if max_tokens is not None else None,
+                "prompt": prompt,
+                "images": image_hashes,
+            }
+        else:
+            # Normalize parts lightly for hashing (do not include raw image bytes, only lengths)
+            def _norm(p: Dict[str, Any]) -> Dict[str, Any]:
+                if p.get("type") == "image_url":
+                    url = (p.get("image_url") or {}).get("url") or ""
+                    return {"type": "image_url", "len": len(url)}
+                if p.get("type") == "text":
+                    return {"type": "text", "len": len(str(p.get("text") or ""))}
+                return {"type": str(p.get("type"))}
+            key_obj = {
+                "v": 2,
+                "type": "vision_parts",
+                "model": model,
+                "temperature": float(temperature) if temperature is not None else None,
+                "max_tokens": int(max_tokens) if max_tokens is not None else None,
+                "parts": [_norm(p) for p in parts],
+            }
         key_str = json.dumps(key_obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         key = hashlib.sha256(key_str.encode("utf-8")).hexdigest()
         cached = cache.get("vision", key)
@@ -312,9 +331,12 @@ def run_vision(
         pass
 
     # Construct OpenAI-style content parts
-    content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
-    for b64 in images_b64:
-        content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+    if parts is None:
+        content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for b64 in images_b64:
+            content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+    else:
+        content = parts
 
     # Clamp parameters for known provider/model quirks (e.g., GPT-5 requires temperature=1.0)
     effective_temperature = float(temperature)
@@ -335,7 +357,7 @@ def run_vision(
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
 
-    logging.debug("LLM vision request: %s (images=%d)", {k: v for k, v in kwargs.items() if k != "messages"}, len(images_b64))
+    logging.debug("LLM vision request: %s (parts=%d)", {k: v for k, v in kwargs.items() if k != "messages"}, len(content))
     # Capture any provider prints to keep our board intact
     _buf_out, _buf_err = io.StringIO(), io.StringIO()
     with redirect_stdout(_buf_out), redirect_stderr(_buf_err):

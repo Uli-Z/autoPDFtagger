@@ -475,74 +475,133 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             t = doc.get_page_text(idx, use_ocr_if_needed=True)
             page_texts.append(t or "")
 
-    # Prepare all images in strict page order; filter very small icons if configured
-    images_b64: List[str] = []
+    # Build ordered elements (text/images) using pdfminer; fallback to page-wise if pdfminer missing
+    elements: List[Dict[str, Any]] = []
     image_manifest_lines: List[str] = []
-    if getattr(doc, 'images', None) is None or not doc.images:
-        try:
-            doc.analyze_document_images()
-        except Exception:
-            pass
-    if getattr(doc, 'images', None):
-        count_added = 0
-        for p_idx, page_images in enumerate(doc.images):
-            for i_idx, img in enumerate(page_images or []):
-                try:
-                    w_cm = PDFDocument._points_to_cm(float(img.get('width', 0.0) or 0.0))  # type: ignore[attr-defined]
-                    h_cm = PDFDocument._points_to_cm(float(img.get('height', 0.0) or 0.0))  # type: ignore[attr-defined]
-                    is_small = min(w_cm, h_cm) < float(min_icon_edge_cm)
-                except Exception:
-                    is_small = False
-                if exclude_small and is_small:
-                    continue
-                xref = img.get('xref')
-                b64 = None
-                if xref:
-                    b64 = doc.render_image_region_png_base64(int(xref), max_px=image_render_max_px)
-                    if not b64:
-                        b64 = doc.get_png_image_base64_by_xref(int(xref))
-                if b64:
-                    images_b64.append(b64)
-                    image_manifest_lines.append(f"[IMG {len(images_b64)}] page={p_idx+1} index_on_page={i_idx+1} xref={xref}")
-                    count_added += 1
-                    if max_images > 0 and count_added >= max_images:
+    images_b64: List[str] = []
+    try:
+        from pdfminer.high_level import extract_pages
+        from pdfminer.layout import LTImage, LTFigure, LTTextContainer, LAParams
+
+        laparams = LAParams()
+
+        def _iter_layout(obj):
+            if hasattr(obj, "_objs") and isinstance(getattr(obj, "_objs"), list):
+                for o in obj._objs:  # type: ignore[attr-defined]
+                    yield o
+
+        def _collect(page_layout, page_number: int):
+            items = []
+            stack = list(_iter_layout(page_layout))
+            img_idx = 0
+            while stack:
+                o = stack.pop(0)
+                if isinstance(o, LTTextContainer):
+                    t = (o.get_text() or "").strip()
+                    if t:
+                        items.append(("text", o.bbox, t, None))
+                elif isinstance(o, LTImage):
+                    img_idx += 1
+                    items.append(("image", o.bbox, None, {"page": page_number, "idx": img_idx}))
+                elif isinstance(o, LTFigure):
+                    stack[0:0] = list(_iter_layout(o))
+                else:
+                    stack[0:0] = list(_iter_layout(o))
+            items.sort(key=lambda it: (-it[1][3], it[1][0]))
+            return items
+
+        total_images = 0
+        for page_no, layout in enumerate(extract_pages(doc.get_absolute_path(), laparams=laparams), start=1):
+            page_items = _collect(layout, page_no)
+            for kind, bbox, text, meta in page_items:
+                if kind == "text":
+                    elements.append({"type": "text", "text": text, "page": page_no})
+                else:
+                    try:
+                        w_cm = PDFDocument._points_to_cm(float(bbox[2] - bbox[0]))  # type: ignore[attr-defined]
+                        h_cm = PDFDocument._points_to_cm(float(bbox[3] - bbox[1]))  # type: ignore[attr-defined]
+                        is_small = min(w_cm, h_cm) < float(min_icon_edge_cm)
+                    except Exception:
+                        is_small = False
+                    if exclude_small and is_small:
+                        continue
+                    if max_images and total_images >= max_images:
+                        continue
+                    b64 = doc.render_page_region_png_base64(page_no - 1, bbox, max_px=image_render_max_px, coords="pdfminer")
+                    if b64:
+                        total_images += 1
+                        images_b64.append(b64)
+                        image_manifest_lines.append(f"[IMG {total_images}] page={page_no} bbox=({bbox[0]:.1f},{bbox[1]:.1f},{bbox[2]:.1f},{bbox[3]:.1f})")
+                        elements.append({"type": "image", "b64": b64, "page": page_no})
+    except Exception as exc:
+        logging.warning("pdfminer unavailable or failed (%s); falling back to page-text + page-ordered images.", exc)
+        if getattr(doc, 'images', None) is None or not doc.images:
+            try:
+                doc.analyze_document_images()
+            except Exception:
+                pass
+        if getattr(doc, 'images', None):
+            count_added = 0
+            for p_idx, page_images in enumerate(doc.images):
+                # Insert page text element first
+                t = page_texts[p_idx] if p_idx < len(page_texts) else ""
+                if t:
+                    elements.append({"type": "text", "text": t, "page": p_idx + 1})
+                for i_idx, img in enumerate(page_images or []):
+                    try:
+                        w_cm = PDFDocument._points_to_cm(float(img.get('width', 0.0) or 0.0))  # type: ignore[attr-defined]
+                        h_cm = PDFDocument._points_to_cm(float(img.get('height', 0.0) or 0.0))  # type: ignore[attr-defined]
+                        is_small = min(w_cm, h_cm) < float(min_icon_edge_cm)
+                    except Exception:
+                        is_small = False
+                    if exclude_small and is_small:
+                        continue
+                    if max_images and count_added >= max_images:
                         break
-            if max_images > 0 and len(images_b64) >= max_images:
-                break
+                    xref = img.get('xref')
+                    b64 = None
+                    if xref:
+                        b64 = doc.render_image_region_png_base64(int(xref), max_px=image_render_max_px)
+                        if not b64:
+                            b64 = doc.get_png_image_base64_by_xref(int(xref))
+                    if b64:
+                        images_b64.append(b64)
+                        count_added += 1
+                        image_manifest_lines.append(f"[IMG {count_added}] page={p_idx+1} index_on_page={i_idx+1} xref={xref}")
+                        elements.append({"type": "image", "b64": b64, "page": p_idx + 1})
 
-    # Compose a single prompt that includes the sequential text and an image manifest
-    # The images are uploaded in the same order as the manifest lines.
-    per_page_blocks: List[str] = []
-    if page_count > 0:
-        for idx, txt in enumerate(page_texts, start=1):
-            per_page_blocks.append(f"Page {idx} text:\n" + _truncate(txt, context_max_chars))
-    else:
-        per_page_blocks.append("Document text:\n" + _truncate(page_texts[0] if page_texts else "", context_max_chars))
-
-    prompt = (
+    # Prepare mixed parts preserving order
+    parts: List[Dict[str, Any]] = []
+    intro = (
         "You are a helpful assistant analyzing full documents combining text and images. "
-        "Use ALL provided information to infer: creation_date, a short title (3-4 words), "
-        "a meaningful summary (3-4 sentences), creator/issuer, suitable tags (list), an importance score (0-10), "
-        "and a confidence (0-10) for each field. "
-        f"Always answer in {_lang()} and output a single JSON object with the same structure used previously.\n\n"
+        "Use ALL provided information to infer: creation_date, a short title (3-4 words), a meaningful summary (3-4 sentences), "
+        "creator/issuer, suitable tags (list), an importance score (0-10), and a confidence (0-10) for each field. "
+        f"Always answer in {_lang()} and output a single JSON object with the same structure as previous runs.\n\n"
         "Existing document context (to be extended consistently):\n" + doc.to_api_json() + "\n\n"
-        "The following sequential text transcript is provided in strict page order.\n" +
-        "\n\n".join(per_page_blocks) + "\n\n" +
-        ("Images are attached below in the exact order listed; each line maps an image to its page: \n" + "\n".join(image_manifest_lines) + "\n\n" if images_b64 else "") +
-        "When images are present, correlate them with nearby page text using the page numbers in the manifest. "
-        "Return only the final JSON object without extra commentary."
+        "The following content is provided in strict reading order (top→bottom, left→right) on each page."
     )
+    parts.append({"type": "text", "text": intro})
+    for el in elements:
+        if el.get("type") == "text":
+            txt = _truncate(el.get("text") or "", context_max_chars)
+            if txt:
+                parts.append({"type": "text", "text": f"[Page {el.get('page')}]\n" + txt})
+        elif el.get("type") == "image":
+            b64 = el.get("b64") or ""
+            parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
 
     # Optional: write a visual debug PDF illustrating the prompt + image order
     if visual_debug_path:
         try:
+            text_blocks = [p.get("text", "") for p in parts if p.get("type") == "text"]
+            image_parts = [p.get("image_url", {}).get("url", "") for p in parts if p.get("type") == "image_url"]
             _write_visual_debug_pdf(
                 visual_debug_path,
                 doc,
-                prompt,
-                per_page_blocks,
+                "\n\n".join(text_blocks),
+                [],
                 image_manifest_lines,
-                images_b64,
+                [u[len("data:image/png;base64,"):] if u.startswith("data:image") else u for u in image_parts],
                 raw_page_texts=page_texts,
             )
             logging.info("Wrote visual debug PDF: %s", visual_debug_path)
@@ -559,7 +618,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             temperature = float(temp_str)
         except Exception:
             temperature = 0.8
-        answer, usage = run_vision(model, prompt, images_b64, temperature=temperature)
+        answer, usage = run_vision(model, prompt="", images_b64=[], temperature=temperature, parts=parts)
         return _json_guard(answer), usage
     except Exception as e:
         logging.warning(f"Combined analysis failed: {e}")
