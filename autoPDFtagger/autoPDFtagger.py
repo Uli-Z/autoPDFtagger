@@ -110,7 +110,7 @@ class autoPDFtagger:
             saved += s
             if c or s:
                 logging.info("[AI image cost] %s :: spent=%.4f $, saved=%.4f $", document.file_name, c, s)
-        logging.info("Spent %.4f $ for image analysis (saved %.4f $ via cache)" % (costs, saved))
+        logging.info("Spent %.2f $ for image analysis (saved %.2f $ via cache)" % (costs, saved))
 
     def run_jobs_parallel(
         self,
@@ -240,7 +240,7 @@ class autoPDFtagger:
             )
         if do_image:
             logging.info(
-                "Spent %.4f $ for image analysis (saved %.4f $ via cache)",
+                "Spent %.2f $ for image analysis (saved %.2f $ via cache)",
                 totals["image_spent"], totals["image_saved"],
             )
 

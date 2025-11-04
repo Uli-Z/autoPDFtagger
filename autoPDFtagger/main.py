@@ -146,7 +146,7 @@ def main():
     if args.export is not None:
         # Optional filename format from config (strftime + {TITLE}/{CREATOR})
         try:
-            filename_format = config.get("EXPORT", "filename_format", fallback=None)
+            filename_format = config.get("EXPORT", "filename_format", raw=True, fallback=None)
             filename_format = filename_format.strip() if filename_format else None
         except Exception:
             filename_format = None
