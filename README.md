@@ -2,35 +2,41 @@
 
 ## What It Is
 
-autoPDFtagger is a CLI that enriches PDFs with standard metadata using OCR + AI (text and images). It keeps your archive as plain files and folders (no lock‑in) and can export JSON for easy review and integration.
+autoPDFtagger is a CLI for semi‑automatic classification, sorting, and tagging of PDF documents. It enriches PDFs with standard metadata using OCR + AI (text and images) and is explicitly built to handle difficult inputs like low‑quality scans and image‑heavy files (e.g., presentations). Your archive remains plain files and folders (no lock‑in), with optional JSON export for review and integration.
 
 ## Key Features
 
-- OCR + AI text analysis with per‑document model selection
+- OCR (via Tesseract) + AI text analysis
 - Vision analysis for embedded images and scans with page‑local context
 - Smart image prioritization with a per‑PDF cap for predictable runtime/costs
-- Writes standard PDF metadata and exports JSON (no proprietary DB)
-- Multi‑provider via LiteLLM (OpenAI, Gemini, local Ollama)
+- Writes standard PDF metadata and exports JSON/CSV (no proprietary DB)
+- Multi‑provider via LiteLLM (tested with OpenAI; local LLMs are supported in principle, but current vision quality may vary)
 - 24h on‑disk cache with cost spent/saved reporting
 
 ## Quick Start
 
 ```bash
-# 1) Install (editable for local dev)
-python -m venv .venv && source .venv/bin/activate && pip install -e .
+# 1) Install dependencies and the tool (editable)
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
 
-# 2) Create a config from the example
+# 2) Install Tesseract OCR (required for OCR)
+#   Debian/Ubuntu:   sudo apt-get install tesseract-ocr tesseract-ocr-eng
+#   macOS (brew):    brew install tesseract
+#   Windows:         https://github.com/UB-Mannheim/tesseract/wiki
+
+# 3) Create a config from the example
 cp autoPDFtagger_example_config.conf ~/.autoPDFtagger.conf
-# Edit models/API keys inside if you use cloud providers
+#   Edit models/API keys inside if you use cloud providers
 
-# 3) Run on a folder and export
+# 4) Run on a folder and export
 autoPDFtagger ./pdf_archive -ftic -e ./out --json all.json
 ```
 
 ## Requirements
 - Python 3.9+
+- Tesseract OCR installed (for OCR features)
 - For cloud models: provider API key (e.g., `OPENAI_API_KEY`)
-- For local models: Ollama with the chosen model pulled (e.g., `ollama pull llava`)
 
 ## Installation
 ```shell
@@ -38,64 +44,34 @@ pip install git+https://github.com/Uli-Z/autoPDFtagger
 ```
 
 ## Configuration
-Minimal configuration lives at `~/.autoPDFtagger.conf` (see `autoPDFtagger_example_config.conf`).
-
-Create the file and adjust models/keys as needed:
-```ini
-; Configuration for autoPDFtagger
-
-[DEFAULT]
-language = English
-
-[AI]
-; Choose explicit models per task (via LiteLLM routing)
-text_model_short = openai/gpt-4o
-text_model_long = openai/gpt-4o-mini
-text_threshold_words = 100
-image_model = openai/gpt-4o   ; or gemini/gemini-1.5-pro or ollama/llava
-tag_model = openai/gpt-4o-mini
-image_temperature = 0.8
-
-[OCR]
-enabled = auto
-languages = eng
-
-[OPENAI-API]
-; Optional fallback if OPENAI_API_KEY is not set
-; API-Key = sk-...
-```
+Place your config at `~/.autoPDFtagger.conf`. Use `autoPDFtagger_example_config.conf` as a starting point and adjust:
+- `[AI]` models for text/image/tag tasks and `text_threshold_words`
+- `[OCR]` language codes (e.g., `eng`, `deu+eng`) or disable
+- `[CACHE]` settings (enabled, ttl, directory)
 
 ### Image Analysis Strategy
 
-- If a page has little text, OCR runs first so the vision model sees page‑local wording.
-- Embedded images and full‑page scans are prioritized; clusters of tiny icons can be replaced with a page render.
-- Only the top‑N images per PDF are analyzed (configurable) to keep runtime and cost predictable.
+- Not all images are analyzed to control time and cost; a configurable N limits analyses per PDF.
+- First pages have higher priority. Afterwards, images on pages with little (OCR) text are favored.
+- If a page has little text, OCR runs first so the vision model gets page‑local wording. Small icon clusters can be replaced by a page render; full‑page scans remain standalone.
 
 ### Caching & Costs
 
-- 24h on‑disk cache for OCR and AI calls; default dir `~/.autoPDFtagger/config`.
+- 24h on‑disk cache for OCR and AI calls; default directory is `~/.autoPDFtagger/config`.
 - Disable per run with `--no-cache`.
-- Logs show per‑call usage, and cache hits include `saved_cost`; totals for spent/saved are aggregated per run.
+- The tool reports both spent and saved (cache) costs to keep runs predictable.
 
-### Local Models (Ollama)
+Note: We’re considering switching the default cache directory to `~/.autoPDFtagger/cache`. If you prefer that, you can already point `[CACHE].dir` there in your config.
 
-You can run fully local without any cloud keys by using Ollama through LiteLLM.
+### Confidence Logic
 
-- Install Ollama and pull models:
-  - `curl -fsSL https://ollama.com/install.sh | sh`
-  - Vision (images): `ollama pull llava`
-  - Text: `ollama pull llama3:8b` (or another text model)
-- Ensure the Ollama service is running (`ollama serve` on first start; then it runs as a daemon).
-- Configure models in `~/.autoPDFtagger.conf`:
-  ```ini
-  [AI]
-  text_model_short = ollama/llama3:8b
-  text_model_long  = ollama/llama3:8b
-  image_model      = ollama/llava
-  tag_model        = ollama/llama3:8b
-  ```
-- No API keys required; data stays on your machine. Default Ollama endpoint is `http://localhost:11434`.
-- Quick test: `autoPDFtagger ./pdf_archive -ftic -e ./out --json all.json`
+Results include per‑field confidences (0–10). An overall confidence index guides updates and filtering. By default, updates apply only when new results improve confidence; the index aggregates fields with extra weight on title and date.
+
+### Tag Analysis
+
+Suggests replacements to normalize and unify tags (synonyms, case, duplicates). You can export/import the database as CSV for quick, manual edits alongside JSON.
+
+ 
 
 ## CLI Examples
 
