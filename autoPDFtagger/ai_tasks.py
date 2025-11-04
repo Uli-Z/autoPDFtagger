@@ -439,19 +439,33 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         context_max_chars = int(config.get('AI', 'combined_text_max_chars', fallback='0'))
     except Exception:
         context_max_chars = 0
+    # Token + image selection knobs
     try:
-        max_images = int(config.get('AI', 'combined_max_images_per_pdf', fallback='12'))
+        token_limit = int(config.get('AI', 'combined_token_limit', fallback=str(1_000_000)))
     except Exception:
-        max_images = 12
+        token_limit = 1_000_000
+    try:
+        tokens_per_image = int(config.get('AI', 'combined_tokens_per_image', fallback='4000'))
+    except Exception:
+        tokens_per_image = 4000
+    try:
+        priority_first_pages = int(config.get('AI', 'combined_priority_first_pages', fallback='3'))
+    except Exception:
+        priority_first_pages = 3
+    try:
+        page_group_threshold = int(config.get('AI', 'combined_page_group_threshold', fallback='3'))
+    except Exception:
+        page_group_threshold = 3
     try:
         image_render_max_px = int(config.get('AI', 'image_render_max_px', fallback='1536'))
     except Exception:
         image_render_max_px = 1536
     exclude_small = _cfg_bool('AI', 'combined_exclude_small_icons', fallback='true')
     try:
-        min_icon_edge_cm = float(config.get('AI', 'min_icon_edge_cm', fallback='2.0'))
+        # For combined mode selection rules, ignore images with min edge < 3cm by default
+        min_icon_edge_cm = float(config.get('AI', 'combined_small_image_min_edge_cm', fallback='3.0'))
     except Exception:
-        min_icon_edge_cm = 2.0
+        min_icon_edge_cm = 3.0
 
     def _truncate(text: str, n: int) -> str:
         text = (text or "").strip()
@@ -553,6 +567,9 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     capture_figures = _cfg_bool('AI', 'combined_capture_figures', fallback='true')
 
     total_visuals = 0
+    # Collect image/figure candidates without rendering to allow selection under budget
+    image_candidates: List[Dict[str, Any]] = []
+    img_order_counter = 0
     for page_no, layout in enumerate(extract_pages(doc.get_absolute_path(), laparams=laparams), start=1):
         page_items = _collect(layout, page_no)
         i = 0
@@ -569,14 +586,13 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
                     is_small = min(w_cm, h_cm) < float(min_icon_edge_cm)
                 except Exception:
                     is_small = False
-                if not (exclude_small and is_small):
-                    if not max_images or total_visuals < max_images:
-                        b64 = doc.render_page_region_png_base64(page_no - 1, bbox, max_px=image_render_max_px, coords="pdfminer")
-                        if b64:
-                            total_visuals += 1
-                            images_b64.append(b64)
-                            image_manifest_lines.append(f"[IMG {total_visuals}] page={page_no} bbox=({bbox[0]:.1f},{bbox[1]:.1f},{bbox[2]:.1f},{bbox[3]:.1f})")
-                            elements.append({"type": "image", "b64": b64, "page": page_no})
+                if exclude_small and is_small:
+                    i += 1
+                    continue
+                img_order_counter += 1
+                area = float(max(0.0, (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])))
+                image_candidates.append({"id": img_order_counter, "page": page_no, "bbox": bbox, "area": area, "kind": "image"})
+                elements.append({"type": "image", "id": img_order_counter, "page": page_no})
                 i += 1
                 continue
             if kind == "figure":
@@ -591,15 +607,11 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
                     except Exception:
                         big_enough = True
                     take = big_enough and (m.get("shapes", 0) >= min_shapes_in_figure) and (m.get("words", 0) <= max_words_in_figure)
-                if take and (not max_images or total_visuals < max_images):
-                    b64 = doc.render_page_region_png_base64(page_no - 1, bbox, max_px=image_render_max_px, coords="pdfminer")
-                    if b64:
-                        total_visuals += 1
-                        images_b64.append(b64)
-                        image_manifest_lines.append(
-                            f"[FIG {total_visuals}] page={page_no} bbox=({bbox[0]:.1f},{bbox[1]:.1f},{bbox[2]:.1f},{bbox[3]:.1f})"
-                        )
-                        elements.append({"type": "image", "b64": b64, "page": page_no})
+                if take:
+                    img_order_counter += 1
+                    area = float(max(0.0, (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])))
+                    image_candidates.append({"id": img_order_counter, "page": page_no, "bbox": bbox, "area": area, "kind": "figure"})
+                    elements.append({"type": "image", "id": img_order_counter, "page": page_no})
                     # Do not descend into children when captured to avoid duplicates
                     i += 1
                 else:
@@ -634,19 +646,110 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             prev = page_text_map.get(p, "")
             page_text_map[p] = (prev + ("\n\n" if prev else "") + txt)
 
-    emitted_pages: set[int] = set()
+    # Aggregate once per page
+    page_text_map: Dict[int, str] = {}
     for el in elements:
         if el.get("type") == "text":
             p = int(el.get("page") or 0)
-            if p in emitted_pages:
+            txt = str(el.get("text") or "").strip()
+            if not txt:
                 continue
-            full_txt = page_text_map.get(p, "").strip()
-            if full_txt:
-                parts.append({"type": "text", "text": f"[Page {p}]\n" + full_txt})
-            emitted_pages.add(p)
-        elif el.get("type") == "image":
-            b64 = el.get("b64") or ""
-            parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+            prev = page_text_map.get(p, "")
+            page_text_map[p] = (prev + ("\n\n" if prev else "") + txt)
+
+    # Estimate token usage for intro + page texts; trim proportionally if exceeding token_limit
+    try:
+        import tiktoken  # type: ignore
+        enc = tiktoken.get_encoding("cl100k_base")
+        def _tok_len(s: str) -> int:
+            try:
+                return len(enc.encode(s or ""))
+            except Exception:
+                return max(1, len(s or "") // 4)
+    except Exception:
+        def _tok_len(s: str) -> int:
+            return max(1, len(s or "") // 4)
+
+    text_parts: List[Tuple[int, str]] = []  # (page, text)
+    for p in sorted(page_text_map.keys()):
+        text_parts.append((p, f"[Page {p}]\n" + page_text_map[p]))
+
+    intro_tokens = _tok_len(intro)
+    page_tokens = [(_tok_len(t)) for _, t in text_parts]
+    sum_text = intro_tokens + sum(page_tokens)
+    if sum_text > token_limit:
+        # Proportional trimming across pages only; keep intro intact
+        budget = max(0, token_limit - intro_tokens)
+        total_pages = sum(page_tokens) or 1
+        new_parts: List[Tuple[int, str]] = []
+        for (p, t), tok in zip(text_parts, page_tokens):
+            tgt = int(tok * budget / total_pages)
+            if tgt <= 0:
+                continue
+            # Approximate cut by char ratio
+            ratio = tgt / max(1, _tok_len(t))
+            cut = int(len(t) * ratio)
+            new_parts.append((p, t[:max(1, cut)]))
+        text_parts = new_parts
+
+    # Build initial parts (intro + trimmed page texts)
+    parts.append({"type": "text", "text": intro})
+    for _, t in text_parts:
+        parts.append({"type": "text", "text": t})
+
+    # Select images under remaining budget and following priority
+    used_tokens = intro_tokens + sum(_tok_len(t) for _, t in text_parts)
+    remaining = max(0, token_limit - used_tokens)
+    per_page: Dict[int, List[Dict[str, Any]]] = {}
+    for m in image_candidates:
+        per_page.setdefault(int(m["page"]), []).append(m)
+
+    candidates: List[Dict[str, Any]] = []
+    for p, metas in per_page.items():
+        if len(metas) >= page_group_threshold:
+            candidates.append({"kind": "page", "page": p, "area": float('inf')})
+        else:
+            candidates.extend(metas)
+
+    early = [c for c in candidates if int(c.get("page", 0)) <= priority_first_pages]
+    # Preserve encounter order for early items (by implicit id/order)
+    early.sort(key=lambda c: int(c.get("id", 0)) if c.get("kind") != "page" else -1)
+    rest = [c for c in candidates if int(c.get("page", 0)) > priority_first_pages]
+    rest.sort(key=lambda c: float(c.get("area", 0.0)), reverse=True)
+    ordered = early + rest
+
+    selected_pages_full: set[int] = set()
+    selected_images: set[int] = set()
+    for c in ordered:
+        if remaining < tokens_per_image:
+            break
+        if c.get("kind") == "page":
+            selected_pages_full.add(int(c.get("page") or 0))
+            remaining -= tokens_per_image
+        else:
+            p = int(c.get("page") or 0)
+            if p in selected_pages_full:
+                continue
+            selected_images.add(int(c.get("id") or 0))
+            remaining -= tokens_per_image
+
+    # Emit images per page in natural order, right after page text
+    pages_in_doc = sorted({*page_text_map.keys(), *[int(m.get('page')) for m in image_candidates]})
+    for p in pages_in_doc:
+        # find insertion index: after the page's text part we added
+        # Simpler: append in order since parts are sequential; acceptable for debugging and clarity.
+        if p in selected_pages_full:
+            b64 = doc.render_page_png_base64(p - 1, max_px=image_render_max_px) or ""
+            if b64:
+                parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+        else:
+            # emit selected region images on this page ordered by encounter id
+            metas = [m for m in image_candidates if int(m["page"]) == p and int(m.get("id", 0)) in selected_images]
+            metas.sort(key=lambda m: int(m.get("id", 0)))
+            for m in metas:
+                b64 = doc.render_page_region_png_base64(p - 1, m["bbox"], max_px=image_render_max_px, coords="pdfminer") or ""
+                if b64:
+                    parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
 
     # Optional: write a visual debug PDF illustrating the prompt + image order
     if visual_debug_path:
@@ -661,7 +764,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
                 visual_debug_path,
                 doc,
                 parts,
-                raw_page_texts=page_texts,
+                raw_page_texts=None,
             )
             logging.info("Wrote visual debug PDF: %s", visual_debug_path)
         except Exception as _e:
