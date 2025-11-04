@@ -100,6 +100,15 @@ Normalize tags across the database with AI:
 autoPDFtagger textanalysis.json imageanalysis.json --ai-tag-analysis --json final.json
 ```
 
+## Export & Metadata
+
+- The tool reads existing PDF metadata during analysis (title, subject/summary, author, keywords, creation date) and combines it with AI‑derived results.
+- Originals are never modified in place. Changes are applied only when exporting:
+  - Files are copied to the chosen target folder (`-e/--export`).
+  - Copies receive standardized filenames (e.g., date + short title) when available.
+  - Standard PDF metadata is written into the copy: Title, Summary (Subject), Author/Creator, and Tags (Keywords). Creation date is set when known.
+- You can still export JSON/CSV to audit or edit data before exporting PDFs.
+
 
 ## Usage
 ```shell
