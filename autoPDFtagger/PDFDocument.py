@@ -173,34 +173,42 @@ class PDFDocument:
         # Ensure the directory for the new file exists
         os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
 
-        # Open the existing PDF document
-        pdf_document = fitz.open(self.get_absolute_path())
+        pdf_document = None
+        try:
+            # Open source
+            pdf_document = fitz.open(self.get_absolute_path())
 
-        # Update the metadata of the PDF document
-        metadata = pdf_document.metadata
-        metadata['title'] = self.title
-        metadata['subject'] = self.summary
-        metadata['summary'] = self.summary
-        metadata['author'] = self.creator
-        metadata['keywords'] = ', '.join(self.tags)
+            # Update metadata
+            metadata = pdf_document.metadata or {}
+            metadata['title'] = self.title or metadata.get('title', '')
+            metadata['subject'] = self.summary or metadata.get('subject', '')
+            metadata['summary'] = self.summary or metadata.get('summary', '')
+            metadata['author'] = self.creator or metadata.get('author', '')
+            keywords = ', '.join(self.tags) if self.tags else metadata.get('keywords', '')
 
-        # Storing additional information about confidences in keyword-list
-        tags_confidence_str = ','.join([str(conf) for conf in self.tags_confidence])
-        metadata['keywords'] = f"{metadata['keywords']} - Metadata automatically updated by autoPDFtagger, title_confidence={self.title_confidence}, summary_confidence={self.summary_confidence}, creation_date_confidence={self.creation_date_confidence}, creator_confidence={self.creator_confidence}, tag_confidence={tags_confidence_str}"
+            # Storing additional information about confidences in keyword-list
+            tags_confidence_str = ','.join([str(conf) for conf in self.tags_confidence])
+            metadata['keywords'] = f"{keywords} - Metadata automatically updated by autoPDFtagger, title_confidence={self.title_confidence}, summary_confidence={self.summary_confidence}, creation_date_confidence={self.creation_date_confidence}, creator_confidence={self.creator_confidence}, tag_confidence={tags_confidence_str}"
 
+            if self.creation_date:
+                # Convert date to PDF format (assume UTC)
+                utc_creation_date = self.creation_date.astimezone(pytz.utc)
+                metadata['creationDate'] = utc_creation_date.strftime("D:%Y%m%d%H%M%S+00'00'")
 
-        if self.creation_date:
-            # Konvertiere das Datum in das PDF-Format
-            # Annahme: Die Zeitzone ist UTC
-            utc_creation_date = self.creation_date.astimezone(pytz.utc)
-            metadata['creationDate'] = utc_creation_date.strftime("D:%Y%m%d%H%M%S+00'00'")
+            pdf_document.set_metadata(metadata)
 
-        pdf_document.set_metadata(metadata)
-       
-        # Save the updated document to the new file path
-        pdf_document.save(new_file_path)
-        pdf_document.close()
-        logging.info(f"PDF saved: {new_file_path}")
+            # Save the updated document to the new file path
+            pdf_document.save(new_file_path)
+            logging.info(f"PDF saved: {new_file_path}")
+        except Exception as exc:
+            logging.error("Failed to save PDF '%s': %s", new_file_path, exc)
+            raise
+        finally:
+            try:
+                if pdf_document is not None:
+                    pdf_document.close()
+            except Exception:
+                pass
 
 
     def to_dict(self):
