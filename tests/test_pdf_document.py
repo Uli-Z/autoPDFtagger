@@ -1,4 +1,5 @@
 import base64
+from pathlib import Path
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -48,6 +49,52 @@ def test_create_new_filename_custom_format(make_pdf_document):
 
     doc.create_new_filename("%Y%m%d_{TITLE}.pdf")
     assert doc.new_file_name == "20220101_Budget-Memo.pdf"
+
+
+def test_save_to_file_sets_supported_metadata_only(tmp_path, monkeypatch, make_pdf_document):
+    # Create a real document and save a copy with updated metadata
+    doc = make_pdf_document("2022-01-01-Memo.pdf")
+    doc.set_creation_date("2022-01-01", 8)
+    doc.set_title("Budget Memo", 7)
+    doc.set_creator("ACME Corp", 6)
+    doc.set_summary("Quarterly budget and notes", 5)
+    doc.set_tags(["finance", "2022"], [6, 5])
+
+    class FakeFitzDoc:
+        def __init__(self):
+            self.metadata = {}
+            self.saved_metadata = None
+            self.saved_path = None
+
+        def set_metadata(self, metadata):
+            self.saved_metadata = dict(metadata)
+
+        def save(self, path):
+            self.saved_path = path
+            # simulate writing a file so os.path.exists works
+            p = Path(path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"%PDF-1.4\n%EOF\n")
+
+        def close(self):
+            pass
+
+    fake_doc = FakeFitzDoc()
+    monkeypatch.setattr(
+        "autoPDFtagger.PDFDocument.fitz.open",
+        lambda path: fake_doc if path == doc.get_absolute_path() else None,
+    )
+
+    target = tmp_path / "exported.pdf"
+    doc.save_to_file(str(target))
+
+    assert target.exists(), "exported file was not created"
+    meta = fake_doc.saved_metadata
+    # Ensure only supported keys were set and 'subject' mirrors our summary
+    assert meta.get("title") == "Budget Memo"
+    assert meta.get("subject") == "Quarterly budget and notes"
+    assert meta.get("author") == "ACME Corp"
+    assert "summary" not in meta
 
 
 def test_set_tags_merges_confidence(make_pdf_document):
@@ -251,7 +298,8 @@ def test_save_to_file_updates_metadata(tmp_path, monkeypatch, make_pdf_document)
     assert fake_doc.saved_path == str(target)
     metadata = fake_doc.saved_metadata
     assert metadata["title"] == "Budget Memo"
-    assert metadata["summary"] == "A concise summary"
+    assert metadata["subject"] == "A concise summary"
+    assert "summary" not in metadata
     assert metadata["author"] == "ACME Corp"
     assert "finance" in metadata["keywords"]
     assert "title_confidence=7" in metadata["keywords"]

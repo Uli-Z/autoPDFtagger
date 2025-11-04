@@ -180,9 +180,10 @@ class PDFDocument:
 
             # Update metadata
             metadata = pdf_document.metadata or {}
+            # Only set supported keys: title, author, subject, keywords, creationDate
             metadata['title'] = self.title or metadata.get('title', '')
             metadata['subject'] = self.summary or metadata.get('subject', '')
-            metadata['summary'] = self.summary or metadata.get('summary', '')
+            metadata.pop('summary', None)  # remove unsupported key if present
             metadata['author'] = self.creator or metadata.get('author', '')
             keywords = ', '.join(self.tags) if self.tags else metadata.get('keywords', '')
 
