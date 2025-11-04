@@ -30,5 +30,10 @@
     "completion_tokens": 2091,
     "total_tokens": 4460,
     "cost": 0.0
+  },
+  "meta": {
+    "expected": {
+      "image_count": 1
+    }
   }
 }

@@ -60,11 +60,12 @@ class autoPDFtagger:
 
     def ai_text_analysis(self):
         logging.info("Asking AI to analyze PDF-Text")
-        cost = 0.0  # for monitoring
+        cost = 0.0  # real cost for this run
+        saved = 0.0  # cost avoided via cache
 
         # Read AI config for text analysis
-        ms = config.get('AI', 'text_model_short', fallback='')
-        ml = config.get('AI', 'text_model_long', fallback='')
+        ms = config.get('AI', 'text_model_short', fallback='openai/gpt-5-mini')
+        ml = config.get('AI', 'text_model_long', fallback='openai/gpt-5-nano')
         thr = int(config.get('AI', 'text_threshold_words', fallback='100'))
 
         for document in self.file_list.pdf_documents.values():
@@ -74,26 +75,42 @@ class autoPDFtagger:
                 self._log_ai_response("text", document, response, usage)
                 if response:
                     document.set_from_json(response)
-                cost += float(usage.get('cost', 0.0) or 0.0)
+                c = float((usage or {}).get('cost', 0.0) or 0.0)
+                s = float((usage or {}).get('saved_cost', 0.0) or 0.0)
+                cost += c
+                saved += s
+                if c or s:
+                    logging.info("[AI text cost] %s :: spent=%.4f $, saved=%.4f $", document.file_name, c, s)
             except Exception as e:
                 logging.error(document.file_name)
                 logging.error(f"Text analysis failed. Error message: {e}")
                 logging.error(traceback.format_exc())
-        logging.info(f"Spent {cost:.4f} $ for text analysis")
+        logging.info(f"Spent {cost:.4f} $ for text analysis (saved {saved:.4f} $ via cache)")
 
 
     def ai_image_analysis(self):
         logging.info("Asking AI to analyze Images")
         costs = 0.0
-        model = config.get('AI', 'image_model', fallback='')
+        saved = 0.0
+        model = config.get('AI', 'image_model', fallback='openai/gpt-5-nano')
         for document in self.file_list.pdf_documents.values():
             logging.info("... " + document.file_name)
             response, usage = ai_tasks.analyze_images(document, model)
             self._log_ai_response("image", document, response, usage)
-            if response:
-                document.set_from_json(response)
-            costs += float(usage.get('cost', 0.0) or 0.0)
-        logging.info("Spent " + str(costs) + " $ for image analysis")
+            # Backward-compatibility: only set metadata if response is a single JSON object
+            try:
+                parsed = json.loads(response) if response else None
+                if isinstance(parsed, dict):
+                    document.set_from_json(response)
+            except Exception:
+                pass
+            c = float((usage or {}).get('cost', 0.0) or 0.0)
+            s = float((usage or {}).get('saved_cost', 0.0) or 0.0)
+            costs += c
+            saved += s
+            if c or s:
+                logging.info("[AI image cost] %s :: spent=%.4f $, saved=%.4f $", document.file_name, c, s)
+        logging.info("Spent %.2f $ for image analysis (saved %.2f $ via cache)" % (costs, saved))
 
     def run_jobs_parallel(
         self,
@@ -133,13 +150,13 @@ class autoPDFtagger:
 
         # Shared cost accumulators
         lock = threading.Lock()
-        totals = {"text": 0.0, "image": 0.0}
+        totals = {"text_spent": 0.0, "text_saved": 0.0, "image_spent": 0.0, "image_saved": 0.0}
 
         # Read AI config once
-        ms = config.get('AI', 'text_model_short', fallback='')
-        ml = config.get('AI', 'text_model_long', fallback='')
+        ms = config.get('AI', 'text_model_short', fallback='openai/gpt-5-mini')
+        ml = config.get('AI', 'text_model_long', fallback='openai/gpt-5-nano')
         thr = int(config.get('AI', 'text_threshold_words', fallback='100'))
-        image_model = config.get('AI', 'image_model', fallback='')
+        image_model = config.get('AI', 'image_model', fallback='openai/gpt-5-nano')
 
         for document in self.file_list.pdf_documents.values():
             abs_path = document.get_absolute_path()
@@ -155,6 +172,36 @@ class autoPDFtagger:
                     return _run
                 jm.add_job(Job(id=ocr_id, kind="ocr", run=_make_ocr()))
 
+            # Add image job first so its future exists when wiring text deps
+            if do_image:
+                def _make_img(doc=document):
+                    def _run():
+                        try:
+                            logging.info("[AI image] %s", doc.file_name)
+                            response, usage = ai_tasks.analyze_images(doc, image_model)
+                            self._log_ai_response("image", doc, response, usage)
+                            # Backward-compatibility: update only if response is a single object
+                            try:
+                                parsed = json.loads(response) if response else None
+                                if isinstance(parsed, dict):
+                                    doc.set_from_json(response)
+                            except Exception:
+                                pass
+                            with lock:
+                                totals["image_spent"] += float((usage or {}).get('cost', 0.0) or 0.0)
+                                totals["image_saved"] += float((usage or {}).get('saved_cost', 0.0) or 0.0)
+                            c = float((usage or {}).get('cost', 0.0) or 0.0)
+                            s = float((usage or {}).get('saved_cost', 0.0) or 0.0)
+                            if c or s:
+                                logging.info("[AI image cost] %s :: spent=%.4f $, saved=%.4f $", doc.file_name, c, s)
+                            logging.info("[AI image done] %s", doc.file_name)
+                        except Exception as exc:
+                            logging.error("Image analysis failed for %s: %s", doc.file_name, exc)
+                            raise
+                    return _run
+                # Image analysis does not require OCR; keep independent
+                jm.add_job(Job(id=f"image:{abs_path}", kind="image", run=_make_img()))
+
             if do_text:
                 def _make_text(doc=document):
                     def _run():
@@ -165,42 +212,37 @@ class autoPDFtagger:
                             if response:
                                 doc.set_from_json(response)
                             with lock:
-                                totals["text"] += float((usage or {}).get('cost', 0.0) or 0.0)
+                                totals["text_spent"] += float((usage or {}).get('cost', 0.0) or 0.0)
+                                totals["text_saved"] += float((usage or {}).get('saved_cost', 0.0) or 0.0)
+                            c = float((usage or {}).get('cost', 0.0) or 0.0)
+                            s = float((usage or {}).get('saved_cost', 0.0) or 0.0)
+                            if c or s:
+                                logging.info("[AI text cost] %s :: spent=%.4f $, saved=%.4f $", doc.file_name, c, s)
                             logging.info("[AI text done] %s", doc.file_name)
                         except Exception as exc:
                             logging.error("Text analysis failed for %s: %s", doc.file_name, exc)
                             raise
                     return _run
                 deps = [ocr_id] if enable_ocr else []
+                if do_image:
+                    # Ensure text runs after image for the same document so that alt-texts are available
+                    deps.append(f"image:{abs_path}")
                 jm.add_job(Job(id=f"text:{abs_path}", kind="text", run=_make_text(), deps=deps))
-
-            if do_image:
-                def _make_img(doc=document):
-                    def _run():
-                        try:
-                            logging.info("[AI image] %s", doc.file_name)
-                            response, usage = ai_tasks.analyze_images(doc, image_model)
-                            self._log_ai_response("image", doc, response, usage)
-                            if response:
-                                doc.set_from_json(response)
-                            with lock:
-                                totals["image"] += float((usage or {}).get('cost', 0.0) or 0.0)
-                            logging.info("[AI image done] %s", doc.file_name)
-                        except Exception as exc:
-                            logging.error("Image analysis failed for %s: %s", doc.file_name, exc)
-                            raise
-                    return _run
-                # Image analysis does not require OCR; keep independent
-                jm.add_job(Job(id=f"image:{abs_path}", kind="image", run=_make_img()))
 
         # Run and summarize
         pending, running, done, failed = jm.run()
         if failed:
             logging.warning("Some jobs failed: %d failed, %d completed", failed, done)
         if do_text:
-            logging.info(f"Spent {totals['text']:.4f} $ for text analysis")
+            logging.info(
+                "Spent %.4f $ for text analysis (saved %.4f $ via cache)",
+                totals["text_spent"], totals["text_saved"],
+            )
         if do_image:
-            logging.info(f"Spent {totals['image']:.4f} $ for image analysis")
+            logging.info(
+                "Spent %.2f $ for image analysis (saved %.2f $ via cache)",
+                totals["image_spent"], totals["image_saved"],
+            )
 
     # Simplify and unify tags over all documents in the database
     def ai_tag_analysis(self):

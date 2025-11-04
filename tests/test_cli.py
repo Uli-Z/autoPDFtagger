@@ -12,6 +12,7 @@ class TrackingFileList:
     def __init__(self, owner):
         self.owner = owner
         self.pdf_documents = {}
+        self.last_filename_format = None
 
     def import_from_json(self, *_):
         self.owner.calls.append("import_from_json")
@@ -19,7 +20,12 @@ class TrackingFileList:
     def get_sorted_pdf_filenames(self):
         return list(self.pdf_documents)
 
-    def create_new_filenames(self):
+    def create_new_filenames(self, *args, **kwargs):
+        # Accept optional format argument from CLI wiring
+        if args:
+            self.last_filename_format = args[0]
+        elif "format_str" in kwargs:
+            self.last_filename_format = kwargs["format_str"]
         self.owner.calls.append("create_new_filenames")
 
     def export_to_json_file(self, path):
@@ -162,7 +168,9 @@ def test_cli_executes_requested_actions(tmp_path, monkeypatch, caplog):
     TrackingArchive.instances.clear()
     config_path = tmp_path / "config.ini"
     config_path.write_text(
-        "[DEFAULT]\nlanguage=English\n[AI]\ntext_model_short=stub/short\ntext_model_long=stub/long\ntext_threshold_words=100\nimage_model=stub/vision\ntag_model=stub/tagger\n",
+        "[DEFAULT]\nlanguage=English\n"
+        "[AI]\ntext_model_short=stub/short\ntext_model_long=stub/long\ntext_threshold_words=100\nimage_model=stub/vision\ntag_model=stub/tagger\n"
+        "[EXPORT]\nfilename_format=%Y%m%d-{TITLE}.pdf\n",
         encoding="utf-8",
     )
     json_path = tmp_path / "out.json"
@@ -218,6 +226,8 @@ def test_cli_executes_requested_actions(tmp_path, monkeypatch, caplog):
     assert ("export_to_folder", str(export_dir)) in archive.calls
     assert "create_new_filenames" in archive.calls
     assert "print_file_list" in archive.calls
+    # Ensure CLI passed filename_format from config
+    assert archive.file_list.last_filename_format == "%Y%m%d-{TITLE}.pdf"
 
 
 def test_cli_prints_json_to_stdout(tmp_path, monkeypatch, capsys):

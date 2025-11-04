@@ -188,6 +188,56 @@ def test_export_to_folder_uses_new_names(tmp_path):
     assert str(export_root / "archive/year/two.pdf") in saved
 
 
+def test_create_new_filenames_uses_format(make_pdf_document):
+    # Build a real PDFDocument to exercise formatting
+    doc = make_pdf_document("2022-01-01-Memo.pdf")
+    doc.set_creation_date("2022-01-01", 8)
+    doc.set_title("Budget Memo", 7)
+    doc.set_creator("ACME Corp", 6)
+
+    pdf_list = PDFList()
+    pdf_list.add_pdf_document(doc)
+
+    pdf_list.create_new_filenames("%Y%m%d-{TITLE}.pdf")
+    assert doc.new_file_name == "20220101-Budget-Memo.pdf"
+
+
+def test_export_to_folder_writes_file_and_logs_summary(tmp_path, caplog):
+    pdf_list = PDFList()
+    export_root = tmp_path / "export"
+
+    class WritingDoc:
+        def __init__(self, relative_path, file_name, new_name):
+            self.relative_path = relative_path
+            self.file_name = file_name
+            self.new_file_name = new_name
+
+        def get_absolute_path(self):
+            # Use a tiny valid PDF header for the source file
+            src = tmp_path / self.file_name
+            if not src.exists():
+                src.write_bytes(b"%PDF-1.4\n%EOF\n")
+            return str(src)
+
+        def save_to_file(self, target):
+            # Simulate a successful write by creating the file on disk
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "wb") as f:
+                f.write(b"%PDF-1.4\n%EOF\n")
+
+    doc = WritingDoc(".", "source.pdf", "renamed.pdf")
+    pdf_list.pdf_documents = {"doc": doc}
+
+    caplog.set_level("INFO")
+    pdf_list.export_to_folder(str(export_root))
+
+    target_path = export_root / "./renamed.pdf"
+    # Normalize possible leftover './' from relative path handling
+    assert any(p.name == "renamed.pdf" for p in export_root.rglob("*.pdf")), "exported file not found"
+    # Ensure summary log was printed
+    assert any("Export summary:" in record.message for record in caplog.records)
+
+
 def test_add_pdf_documents_from_folder_skips_mock_fixtures(tmp_path, caplog):
     base = tmp_path / "docs"
     base.mkdir()

@@ -19,6 +19,7 @@ import fitz
 import logging
 import re
 import base64
+import unicodedata
 from datetime import datetime
 import pytz
 import traceback
@@ -85,6 +86,8 @@ class PDFDocument:
         self.images_already_analyzed = False
         self.image_coverage = None
         self.pdf_text: Optional[str] = None
+        # Buffer for synthesized image alt-texts (tuples of (page_index, alt_text))
+        self._image_alt_texts = []
 
     def get_absolute_path(self):
         return os.path.join(self.folder_path_abs, self.file_name)
@@ -94,6 +97,55 @@ class PDFDocument:
         if self.pdf_text is None:
             self.pdf_text = self.read_ocr()
         return self.pdf_text
+
+    def inject_image_alt_texts(self, alts_by_page):
+        """
+        Inject concise image descriptions (alt-texts) into the in-memory text buffer
+        so that subsequent text analysis can leverage them. Each entry is a tuple
+        (page_index, alt_text). This does not modify the PDF file on disk; use
+        save_to_file to persist metadata changes if desired.
+        """
+        try:
+            # Group alt-texts by page
+            grouped = {}
+            for page_index, alt_text in alts_by_page:
+                if not alt_text:
+                    continue
+                self._image_alt_texts.append((page_index, alt_text))
+                grouped.setdefault(int(page_index), []).append(alt_text)
+
+            # Rebuild text by page, appending alt-texts to their respective pages.
+            # This ensures the alt text appears at least on the same page.
+            # Use OCR/text extraction per page to avoid losing baseline text.
+            # If extraction fails, fall back to appending to the end.
+            page_texts = []
+            try:
+                import fitz  # local import to avoid unused at module level
+                pdf = fitz.open(self.get_absolute_path())
+                try:
+                    page_count = len(pdf)
+                finally:
+                    pdf.close()
+            except Exception:
+                page_count = 0
+
+            if page_count > 0:
+                for idx in range(page_count):
+                    base = self.get_page_text(idx, use_ocr_if_needed=True) or ""
+                    extras = grouped.get(idx) or []
+                    if extras:
+                        base = (base + "\n\n" + "\n".join(f"[Image p{idx+1}] {t}" for t in extras)).strip()
+                    page_texts.append(base)
+                self.pdf_text = "\n\n".join(page_texts).strip()
+            else:
+                # Fallback if page count cannot be determined
+                base_text = self.get_pdf_text() or ""
+                lines = [f"[Image] {t}" for _, t in alts_by_page if t]
+                if lines:
+                    self.pdf_text = (base_text + "\n\n" + "\n".join(lines)).strip()
+        except Exception:
+            # Non-fatal; leave text as-is on failure
+            pass
             
 
     def analyze_file(self):
@@ -121,34 +173,43 @@ class PDFDocument:
         # Ensure the directory for the new file exists
         os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
 
-        # Open the existing PDF document
-        pdf_document = fitz.open(self.get_absolute_path())
+        pdf_document = None
+        try:
+            # Open source
+            pdf_document = fitz.open(self.get_absolute_path())
 
-        # Update the metadata of the PDF document
-        metadata = pdf_document.metadata
-        metadata['title'] = self.title
-        metadata['subject'] = self.summary
-        metadata['summary'] = self.summary
-        metadata['author'] = self.creator
-        metadata['keywords'] = ', '.join(self.tags)
+            # Update metadata
+            metadata = pdf_document.metadata or {}
+            # Only set supported keys: title, author, subject, keywords, creationDate
+            metadata['title'] = self.title or metadata.get('title', '')
+            metadata['subject'] = self.summary or metadata.get('subject', '')
+            metadata.pop('summary', None)  # remove unsupported key if present
+            metadata['author'] = self.creator or metadata.get('author', '')
+            keywords = ', '.join(self.tags) if self.tags else metadata.get('keywords', '')
 
-        # Storing additional information about confidences in keyword-list
-        tags_confidence_str = ','.join([str(conf) for conf in self.tags_confidence])
-        metadata['keywords'] = f"{metadata['keywords']} - Metadata automatically updated by autoPDFtagger, title_confidence={self.title_confidence}, summary_confidence={self.summary_confidence}, creation_date_confidence={self.creation_date_confidence}, creator_confidence={self.creator_confidence}, tag_confidence={tags_confidence_str}"
+            # Storing additional information about confidences in keyword-list
+            tags_confidence_str = ','.join([str(conf) for conf in self.tags_confidence])
+            metadata['keywords'] = f"{keywords} - Metadata automatically updated by autoPDFtagger, title_confidence={self.title_confidence}, summary_confidence={self.summary_confidence}, creation_date_confidence={self.creation_date_confidence}, creator_confidence={self.creator_confidence}, tag_confidence={tags_confidence_str}"
 
+            if self.creation_date:
+                # Convert date to PDF format (assume UTC)
+                utc_creation_date = self.creation_date.astimezone(pytz.utc)
+                metadata['creationDate'] = utc_creation_date.strftime("D:%Y%m%d%H%M%S+00'00'")
 
-        if self.creation_date:
-            # Konvertiere das Datum in das PDF-Format
-            # Annahme: Die Zeitzone ist UTC
-            utc_creation_date = self.creation_date.astimezone(pytz.utc)
-            metadata['creationDate'] = utc_creation_date.strftime("D:%Y%m%d%H%M%S+00'00'")
+            pdf_document.set_metadata(metadata)
 
-        pdf_document.set_metadata(metadata)
-       
-        # Save the updated document to the new file path
-        pdf_document.save(new_file_path)
-        pdf_document.close()
-        logging.info(f"PDF saved: {new_file_path}")
+            # Save the updated document to the new file path
+            pdf_document.save(new_file_path)
+            logging.info(f"PDF saved: {new_file_path}")
+        except Exception as exc:
+            logging.error("Failed to save PDF '%s': %s", new_file_path, exc)
+            raise
+        finally:
+            try:
+                if pdf_document is not None:
+                    pdf_document.close()
+            except Exception:
+                pass
 
 
     def to_dict(self):
@@ -301,6 +362,123 @@ class PDFDocument:
         except Exception as e:
             logging.error(f"Error extracting PNG image by xref: {e}")
             return None
+
+    def render_image_region_png_base64(self, xref: int, max_px: int = 1024):
+        """
+        Render the region of the page containing the image identified by `xref`.
+        Scales so that the longest edge of the region is at most `max_px`.
+        Returns base64 PNG or None if not found.
+        """
+        try:
+            pdf_path = self.get_absolute_path()
+            pdf_document = fitz.open(pdf_path)
+            try:
+                for page_index in range(len(pdf_document)):
+                    page = pdf_document[page_index]
+                    rects = page.get_image_rects(xref)
+                    if not rects:
+                        continue
+                    rect = rects[0]
+                    longest = max(rect.width, rect.height)
+                    if longest <= 0:
+                        scale = 1.0
+                    else:
+                        scale = min(1.0, float(max_px) / float(longest)) if max_px else 1.0
+                    mat = fitz.Matrix(scale, scale)
+                    pix = page.get_pixmap(matrix=mat, clip=rect)
+                    img_bytes = pix.tobytes("png")
+                    encoded = base64.b64encode(img_bytes).decode()
+                    return encoded
+            finally:
+                pdf_document.close()
+            return None
+        except Exception as e:
+            logging.error(f"Error rendering image region by xref: {e}")
+            return None
+
+    @staticmethod
+    def _points_to_cm(value: float) -> float:
+        try:
+            return float(value) / 72.0 * 2.54
+        except Exception:
+            return 0.0
+
+    @classmethod
+    def rect_to_cm(cls, rect) -> tuple:
+        """
+        Convert a PyMuPDF rect's width/height (points) into centimeters.
+        Returns (width_cm, height_cm).
+        """
+        try:
+            return cls._points_to_cm(rect.width), cls._points_to_cm(rect.height)
+        except Exception:
+            return 0.0, 0.0
+
+    @classmethod
+    def is_small_icon_rect(cls, rect, min_edge_cm: float) -> bool:
+        try:
+            w_cm, h_cm = cls.rect_to_cm(rect)
+            return min(w_cm, h_cm) < float(min_edge_cm)
+        except Exception:
+            return False
+
+    def render_page_png_base64(self, page_index: int, max_px: int = 1536):
+        """
+        Render the given page into a PNG scaled so that its longest edge is
+        at most `max_px`. Returns base64 string, or None on error.
+        """
+        try:
+            pdf_path = self.get_absolute_path()
+            pdf_document = fitz.open(pdf_path)
+            if page_index < 0 or page_index >= len(pdf_document):
+                pdf_document.close()
+                return None
+            page = pdf_document[page_index]
+            width = page.rect.width
+            height = page.rect.height
+            longest = max(width, height)
+            if longest <= 0:
+                scale = 1.0
+            else:
+                scale = min(1.0, float(max_px) / float(longest)) if max_px else 1.0
+            mat = fitz.Matrix(scale, scale)
+            pix = page.get_pixmap(matrix=mat)
+            img_bytes = pix.tobytes("png")
+            encoded_image = base64.b64encode(img_bytes).decode()
+            pdf_document.close()
+            return encoded_image
+        except Exception as e:
+            logging.error(f"Error rendering page to PNG: {e}")
+            return None
+
+    def get_page_text(self, page_index: int, use_ocr_if_needed: bool = True) -> str:
+        """
+        Returns the text content of a single page. If the page has no text layer
+        and an OCR runner is configured, optionally OCR that page.
+        """
+        pdf_document = None
+        try:
+            pdf_document = fitz.open(self.get_absolute_path())
+            if page_index < 0 or page_index >= len(pdf_document):
+                return ""
+            page = pdf_document[page_index]
+            text = page.get_text("text") or ""
+            if text.strip():
+                return self._clean_text(text)
+            if use_ocr_if_needed and self._ocr_runner is not None:
+                logging.info("[Page OCR] %s (page %d)", self.file_name, page_index + 1)
+                ocr_text = self._ocr_runner.extract_text_from_page(page) or ""
+                return self._clean_text(ocr_text)
+            return ""
+        except Exception as e:
+            logging.error(f"Failed to get page text for {self.file_name}: {e}")
+            return ""
+        finally:
+            try:
+                if pdf_document is not None:
+                    pdf_document.close()
+            except Exception:
+                pass
 
 
     def get_modification_date(self):
@@ -784,6 +962,17 @@ class PDFDocument:
         The format can include date formatting strings and {TITLE} as a placeholder for the document title.
         If no format is provided, the default format "YY-MM-DD-{TITLE}.pdf" is used.
         """
+        def _slugify_component(value: str) -> str:
+            if not value:
+                return ""
+            # Normalize to ASCII, drop accents, then replace non-alnum with single '-'
+            normalized = unicodedata.normalize("NFKD", value)
+            ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
+            # Replace any sequence of non-alphanumeric characters with a single dash
+            sanitized = re.sub(r"[^A-Za-z0-9]+", "-", ascii_only)
+            # Trim leading/trailing dashes
+            sanitized = sanitized.strip("-")
+            return sanitized
         # Replace date parts in the format with the actual date
         if self.creation_date:
             date_str = self.creation_date.strftime(format_str)
@@ -791,9 +980,11 @@ class PDFDocument:
             # If no creation date is available, use the modification date
             date_str = self.modification_date.strftime(format_str)
 
-        # Replace {TITLE} with the document title
-        new_filename = date_str.replace('{TITLE}', self.title)
-        new_filename = new_filename.replace('{CREATOR}', self.creator)
+        # Replace placeholders with slugified components for safe filenames
+        title_slug = _slugify_component(self.title)
+        creator_slug = _slugify_component(self.creator)
+        new_filename = date_str.replace('{TITLE}', title_slug)
+        new_filename = new_filename.replace('{CREATOR}', creator_slug)
         # Store the new filename
         self.new_file_name = new_filename
         return self

@@ -268,6 +268,7 @@ class PDFList:
 
     def export_to_folder(self, path):
         logging.info("Exporting files to folder " + path)
+        saved_count = 0
         for pdf in self.pdf_documents.values():
             # Determine the new relative path and create the folder if it doesn't exist
             new_relative_path = pdf.new_relative_path if hasattr(pdf, 'new_relative_path') else re.sub(r'^(\.\./)+|^\.$', '', pdf.relative_path)
@@ -279,8 +280,19 @@ class PDFList:
             target_file_path = os.path.join(target_directory, target_filename)
             logging.info(f"Saving file to {target_file_path}")
             # Copy the file to the target folder
-            pdf.save_to_file(target_file_path)
+            try:
+                pdf.save_to_file(target_file_path)
+                if os.path.exists(target_file_path):
+                    saved_count += 1
+                else:
+                    logging.error("Export reported success but file not found on disk: %s", target_file_path)
+            except Exception as exc:
+                logging.error("Failed to export %s: %s", pdf.file_name, exc)
+        logging.info("Export summary: %d file(s) written to %s", saved_count, path)
 
-    def create_new_filenames(self):
-        for doc in self.pdf_documents.values(): 
-            doc = doc.create_new_filename()
+    def create_new_filenames(self, format_str: str | None = None):
+        for doc in self.pdf_documents.values():
+            if format_str:
+                doc = doc.create_new_filename(format_str)
+            else:
+                doc = doc.create_new_filename()

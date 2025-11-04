@@ -1,0 +1,34 @@
+{
+  "response": {
+    "summary": "The document appears to be a presentation file featuring Henry Smith, identified as CEO, with an entry labeled 'Fun Explanation.' The OCR snippet provides minimal content, suggesting an overview or introductory slide rather than full text. The exact topic and date are not discernible from the available data.",
+    "summary_confidence": 4,
+    "title": "Henry Smith CEO Presentation",
+    "title_confidence": 4,
+    "creation_date": null,
+    "creation_date_confidence": 0,
+    "creator": "Henry Smith",
+    "creator_confidence": 9,
+    "tags": [
+      "presentation",
+      "CEO",
+      "Henry Smith",
+      "explanation",
+      "fun"
+    ],
+    "tags_confidence": [
+      7,
+      9,
+      9,
+      6,
+      6
+    ],
+    "importance": 3,
+    "importance_confidence": 3
+  },
+  "usage": {
+    "prompt_tokens": 292,
+    "completion_tokens": 1728,
+    "total_tokens": 2020,
+    "cost": 0.0
+  }
+}

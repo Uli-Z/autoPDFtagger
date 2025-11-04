@@ -1,12 +1,35 @@
 import os
+import json
 import logging
+import io
+from contextlib import redirect_stdout, redirect_stderr
 from typing import Any, Dict, List, Optional, Tuple
 from autoPDFtagger.config import config as app_config
+from autoPDFtagger import cache
+import hashlib
 
 # LiteLLM is optional at import time for tests; we stub usage when patched
+# Proactively dampen library logging before import when possible
+os.environ.setdefault("LITELLM_LOG", "ERROR")
 try:
-    from litellm import completion
+    import litellm  # type: ignore
+    from litellm import completion  # type: ignore
+    # Keep LiteLLM and common deps quiet to avoid breaking our status board
+    for _name in ("litellm", "LiteLLM", "openai", "httpx", "httpcore"):
+        try:
+            _logger = logging.getLogger(_name)
+            _logger.setLevel(logging.WARNING)
+            _logger.propagate = False
+        except Exception:
+            pass
+    # Best-effort: newer litellm exposes set_verbose
+    try:
+        if hasattr(litellm, "set_verbose"):
+            litellm.set_verbose(False)  # type: ignore[attr-defined]
+    except Exception:
+        pass
 except Exception:  # pragma: no cover - tests will monkeypatch call sites
+    litellm = None  # type: ignore
     completion = None  # type: ignore
 
 
@@ -17,6 +40,9 @@ _PRICE_MAP: Dict[str, Tuple[float, float]] = {
     "openai/gpt-4o": (0.005, 0.015),
     "openai/gpt-4o-mini": (0.0005, 0.0015),
     "openai/gpt-3.5-turbo-1106": (0.001, 0.002),
+    # Common dated aliases mapped to the nearest known rate
+    "openai/gpt-4o-2024-08-06": (0.005, 0.015),
+    "openai/gpt-4o-mini-2024-07-18": (0.0005, 0.0015),
 }
 
 
@@ -32,17 +58,58 @@ def infer_provider(model: str) -> Dict[str, str]:
 
 
 def _compute_cost(model: str, usage: Dict[str, Any]) -> float:
-    rates = _PRICE_MAP.get(model)
+    def _lookup(name: str) -> Optional[Tuple[float, float]]:
+        return _PRICE_MAP.get(name)
+
+    # Prefer config-defined rates if available
+    rates = _rates_from_config(model)
     if not rates:
-        # try by provider family
+        rates = _lookup(model)
+    if not rates:
         info = infer_provider(model)
-        key = f"{info['provider']}/{model.split('/')[-1]}"
-        rates = _PRICE_MAP.get(key)
+        base = model.split('/')[-1].lower()
+        # direct provider/key lookup
+        rates = _lookup(f"{info['provider']}/{base}")
+        if not rates and info["provider"] == "openai":
+            # Fuzzy mapping for common OpenAI variants with date suffixes
+            if "gpt-4o-mini" in base:
+                rates = _lookup("openai/gpt-4o-mini")
+            elif "gpt-4o" in base:
+                rates = _lookup("openai/gpt-4o")
+            elif "gpt-3.5-turbo" in base:
+                # map generic 3.5-turbo to a known 3.5 spec
+                rates = _lookup("openai/gpt-3.5-turbo-1106")
     if not rates:
+        logging.debug("Cost estimation: unknown rates for model '%s' (usage=%s)", model, usage)
         return 0.0
     prompt = int(usage.get("prompt_tokens", 0) or 0)
     completion_tokens = int(usage.get("completion_tokens", 0) or 0)
     return prompt * rates[0] / 1000.0 + completion_tokens * rates[1] / 1000.0
+
+
+def _litellm_cost(resp: Any) -> Optional[float]:
+    """Try to compute cost using LiteLLM's built-in helpers when available.
+
+    Returns a float when successful, or None to indicate fallback should be used.
+    """
+    try:
+        if litellm is None:
+            return None
+        # Newer LiteLLM versions expose completion_cost(response)
+        fn = getattr(litellm, "completion_cost", None)
+        if callable(fn):
+            return float(fn(resp))
+        # Try a few common historical helper names for compatibility
+        for name in ("calculate_cost", "response_cost", "cost_per_response"):
+            helper = getattr(litellm, name, None)
+            if callable(helper):
+                try:
+                    return float(helper(resp))
+                except Exception:
+                    continue
+    except Exception:
+        return None
+    return None
 
 
 def _ensure_env_for_provider(model: str) -> None:
@@ -96,6 +163,35 @@ def run_chat(
 
     _ensure_env_for_provider(model)
 
+    # Cache lookup
+    try:
+        norm_messages: List[Dict[str, Any]] = []
+        for m in messages:
+            role = m.get("role")
+            content = m.get("content")
+            norm_messages.append({"role": role, "content": content})
+        key_obj = {
+            "v": 1,
+            "type": "chat",
+            "model": model,
+            "json_mode": bool(json_mode),
+            "has_schema": bool(schema),
+            "temperature": float(temperature) if temperature is not None else None,
+            "max_tokens": int(max_tokens) if max_tokens is not None else None,
+            "messages": norm_messages,
+        }
+        key_str = json.dumps(key_obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        key = hashlib.sha256(key_str.encode("utf-8")).hexdigest()
+        cached = cache.get("chat", key)
+        if cached and isinstance(cached, dict) and "text" in cached:
+            logging.info("Chat cache hit (model=%s)", model)
+            prev_usage = dict(cached.get("usage") or {})
+            saved = float(prev_usage.get("cost", 0.0) or 0.0)
+            usage = {"cost": 0.0, "saved_cost": saved, "cache_hit": True}
+            return str(cached.get("text") or ""), usage
+    except Exception:
+        pass
+
     effective_temperature = float(temperature)
     model_name = model.lower()
     if "gpt-5" in model_name and abs(effective_temperature - 1.0) > 1e-6:
@@ -120,7 +216,16 @@ def run_chat(
         kwargs["max_tokens"] = max_tokens
 
     logging.debug("LLM chat request: %s", {k: v for k, v in kwargs.items() if k != "messages"})
-    resp = completion(**kwargs)  # type: ignore[arg-type]
+    # Some providers/versions print to stdout/stderr; capture to keep progress bars clean
+    _buf_out, _buf_err = io.StringIO(), io.StringIO()
+    with redirect_stdout(_buf_out), redirect_stderr(_buf_err):
+        resp = completion(**kwargs)  # type: ignore[arg-type]
+    _out_text = _buf_out.getvalue().strip()
+    _err_text = _buf_err.getvalue().strip()
+    if _out_text:
+        logging.debug("LiteLLM stdout: %s", _out_text)
+    if _err_text:
+        logging.debug("LiteLLM stderr: %s", _err_text)
     try:
         text = resp["choices"][0]["message"]["content"]
     except Exception:
@@ -138,8 +243,17 @@ def run_chat(
         except Exception:
             # best-effort
             usage = {k: raw_usage.get(k) for k in ("prompt_tokens", "completion_tokens", "total_tokens") if k in raw_usage}
-    # cost estimation
-    usage["cost"] = _compute_cost(model, usage)
+    # cost estimation: prefer LiteLLM helper if available
+    cost = _litellm_cost(resp)
+    if cost is None:
+        cost = _compute_cost(model, usage)
+    usage["cost"] = cost
+    usage["saved_cost"] = 0.0
+    usage["cache_hit"] = False
+    try:
+        cache.set("chat", key, {"text": text or "", "usage": usage})
+    except Exception:
+        pass
     return text or "", usage
 
 
@@ -160,6 +274,30 @@ def run_vision(
 
     _ensure_env_for_provider(model)
 
+    # Cache lookup based on prompt + image hashes
+    try:
+        image_hashes = [hashlib.sha256((b64 or "").encode("utf-8")).hexdigest() for b64 in images_b64]
+        key_obj = {
+            "v": 1,
+            "type": "vision",
+            "model": model,
+            "temperature": float(temperature) if temperature is not None else None,
+            "max_tokens": int(max_tokens) if max_tokens is not None else None,
+            "prompt": prompt,
+            "images": image_hashes,
+        }
+        key_str = json.dumps(key_obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        key = hashlib.sha256(key_str.encode("utf-8")).hexdigest()
+        cached = cache.get("vision", key)
+        if cached and isinstance(cached, dict) and "text" in cached:
+            logging.info("Vision cache hit (model=%s, images=%d)", model, len(images_b64))
+            prev_usage = dict(cached.get("usage") or {})
+            saved = float(prev_usage.get("cost", 0.0) or 0.0)
+            usage = {"cost": 0.0, "saved_cost": saved, "cache_hit": True}
+            return str(cached.get("text") or ""), usage
+    except Exception:
+        pass
+
     # Construct OpenAI-style content parts
     content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
     for b64 in images_b64:
@@ -174,7 +312,16 @@ def run_vision(
         kwargs["max_tokens"] = max_tokens
 
     logging.debug("LLM vision request: %s (images=%d)", {k: v for k, v in kwargs.items() if k != "messages"}, len(images_b64))
-    resp = completion(**kwargs)  # type: ignore[arg-type]
+    # Capture any provider prints to keep our board intact
+    _buf_out, _buf_err = io.StringIO(), io.StringIO()
+    with redirect_stdout(_buf_out), redirect_stderr(_buf_err):
+        resp = completion(**kwargs)  # type: ignore[arg-type]
+    _out_text = _buf_out.getvalue().strip()
+    _err_text = _buf_err.getvalue().strip()
+    if _out_text:
+        logging.debug("LiteLLM stdout: %s", _out_text)
+    if _err_text:
+        logging.debug("LiteLLM stderr: %s", _err_text)
     try:
         text = resp["choices"][0]["message"]["content"]
     except Exception:
@@ -187,5 +334,50 @@ def run_vision(
             "completion_tokens": raw_usage.get("completion_tokens", 0),
             "total_tokens": raw_usage.get("total_tokens", 0),
         }
-    usage["cost"] = _compute_cost(model, usage)
+    cost = _litellm_cost(resp)
+    if cost is None:
+        cost = _compute_cost(model, usage)
+    usage["cost"] = cost
+    usage["saved_cost"] = 0.0
+    usage["cache_hit"] = False
+    try:
+        cache.set("vision", key, {"text": text or "", "usage": usage})
+    except Exception:
+        pass
     return text or "", usage
+def _rates_from_config(model: str) -> Optional[Tuple[float, float]]:
+    """Try to read pricing from config [PRICING] section.
+
+    Expected keys (any one variant):
+      - "{model}.input_per_1k" and "{model}.output_per_1k" (exact model string)
+      - "{provider}/{base}.input_per_1k" and "{provider}/{base}.output_per_1k"
+    Returns (input_rate, output_rate) in $/1k tokens, or None if not present.
+    """
+    try:
+        if not app_config.has_section("PRICING"):
+            return None
+    except Exception:
+        return None
+
+    def _get_pair(prefix: str) -> Optional[Tuple[float, float]]:
+        try:
+            i = app_config.get("PRICING", f"{prefix}.input_per_1k", fallback=None)
+            o = app_config.get("PRICING", f"{prefix}.output_per_1k", fallback=None)
+            if i is None or o is None:
+                return None
+            return float(i), float(o)
+        except Exception:
+            return None
+
+    # 1) Exact model key
+    rates = _get_pair(model)
+    if rates:
+        return rates
+
+    # 2) Provider + base name
+    info = infer_provider(model)
+    base = model.split('/')[-1]
+    rates = _get_pair(f"{info['provider']}/{base}")
+    if rates:
+        return rates
+    return None
