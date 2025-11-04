@@ -256,6 +256,19 @@ def run_chat(
     cost = _litellm_cost(resp)
     if cost is None:
         cost = _compute_cost(model, usage)
+        # If provider did not supply cost and we're sending vision parts, optionally
+        # add a flat per-image surcharge from config pricing.
+        try:
+            img_count = 0
+            try:
+                # content variable exists above
+                img_count = sum(1 for p in content if (p or {}).get("type") == "image_url")
+            except Exception:
+                img_count = 0
+            img_rate = _image_rate_from_config(model) or 0.0
+            cost = float(cost or 0.0) + float(img_count) * float(img_rate)
+        except Exception:
+            pass
     usage["cost"] = cost
     usage["saved_cost"] = 0.0
     usage["cache_hit"] = False
@@ -426,4 +439,40 @@ def _rates_from_config(model: str) -> Optional[Tuple[float, float]]:
     rates = _get_pair(f"{info['provider']}/{base}")
     if rates:
         return rates
+    return None
+
+
+def _image_rate_from_config(model: str) -> Optional[float]:
+    """Read a flat per-image input cost from [PRICING] section if provided.
+
+    Expected keys (any one variant):
+      - "{model}.image_flat"
+      - "{provider}/{base}.image_flat"
+    Returns $ per image (float) or None if not present.
+    """
+    try:
+        if not app_config.has_section("PRICING"):
+            return None
+    except Exception:
+        return None
+
+    def _get(key: str) -> Optional[float]:
+        try:
+            v = app_config.get("PRICING", key, fallback=None)
+            if v is None:
+                return None
+            return float(v)
+        except Exception:
+            return None
+
+    # 1) Exact model key
+    val = _get(f"{model}.image_flat")
+    if val is not None:
+        return val
+    # 2) Provider + base name
+    info = infer_provider(model)
+    base = model.split('/')[-1]
+    val = _get(f"{info['provider']}/{base}.image_flat")
+    if val is not None:
+        return val
     return None

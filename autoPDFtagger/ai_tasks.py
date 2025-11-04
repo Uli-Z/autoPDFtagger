@@ -435,9 +435,10 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
 
     # Read knobs from config
     try:
-        context_max_chars = int(config.get('AI', 'combined_text_max_chars', fallback='6000'))
+        # No truncation by default; 0 disables trimming
+        context_max_chars = int(config.get('AI', 'combined_text_max_chars', fallback='0'))
     except Exception:
-        context_max_chars = 6000
+        context_max_chars = 0
     try:
         max_images = int(config.get('AI', 'combined_max_images_per_pdf', fallback='12'))
     except Exception:
@@ -611,6 +612,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
 
     # Prepare mixed parts preserving order
     parts: List[Dict[str, Any]] = []
+    # Detailed instruction as before, including existing context; not duplicated elsewhere
     intro = (
         "You are a helpful assistant analyzing full documents combining text and images. "
         "Use ALL provided information to infer: creation_date, a short title (3-4 words), a meaningful summary (3-4 sentences), "
@@ -620,11 +622,28 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         "The following content is provided in strict reading order (top→bottom, left→right) on each page."
     )
     parts.append({"type": "text", "text": intro})
+
+    # Aggregate all text per page once, then emit it at the first text occurrence on that page
+    page_text_map: Dict[int, str] = {}
     for el in elements:
         if el.get("type") == "text":
-            txt = _truncate(el.get("text") or "", context_max_chars)
-            if txt:
-                parts.append({"type": "text", "text": f"[Page {el.get('page')}]\n" + txt})
+            p = int(el.get("page") or 0)
+            txt = str(el.get("text") or "").strip()
+            if not txt:
+                continue
+            prev = page_text_map.get(p, "")
+            page_text_map[p] = (prev + ("\n\n" if prev else "") + txt)
+
+    emitted_pages: set[int] = set()
+    for el in elements:
+        if el.get("type") == "text":
+            p = int(el.get("page") or 0)
+            if p in emitted_pages:
+                continue
+            full_txt = page_text_map.get(p, "").strip()
+            if full_txt:
+                parts.append({"type": "text", "text": f"[Page {p}]\n" + full_txt})
+            emitted_pages.add(p)
         elif el.get("type") == "image":
             b64 = el.get("b64") or ""
             parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
@@ -632,15 +651,16 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     # Optional: write a visual debug PDF illustrating the prompt + image order
     if visual_debug_path:
         try:
-            text_blocks = [p.get("text", "") for p in parts if p.get("type") == "text"]
-            image_parts = [p.get("image_url", {}).get("url", "") for p in parts if p.get("type") == "image_url"]
-            _write_visual_debug_pdf(
+            # Log the first few part types to verify order in runtime logs
+            seq = ", ".join([
+                ("T" if p.get("type") == "text" else ("I" if p.get("type") == "image_url" else p.get("type", "?")))
+                for p in parts[:30]
+            ])
+            logging.info("[combined visual-debug] part sequence (first 30): %s", seq)
+            _write_visual_debug_pdf_from_parts(
                 visual_debug_path,
                 doc,
-                "\n\n".join(text_blocks),
-                [],
-                image_manifest_lines,
-                [u[len("data:image/png;base64,"):] if u.startswith("data:image") else u for u in image_parts],
+                parts,
                 raw_page_texts=page_texts,
             )
             logging.info("Wrote visual debug PDF: %s", visual_debug_path)
@@ -721,6 +741,76 @@ def _write_visual_debug_pdf(output_path: str, doc: PDFDocument, prompt: str, per
         except Exception:
             # If insertion fails, leave a note
             page.insert_textbox(img_rect, "[Failed to render image]", fontsize=12, fontname="helv", color=(1, 0, 0))
+
+    pdf.save(output_path)
+    pdf.close()
+
+
+def _write_visual_debug_pdf_from_parts(output_path: str, doc: PDFDocument, parts: List[Dict[str, Any]], raw_page_texts: Optional[List[str]] = None) -> None:
+    import os
+    import base64
+    import fitz
+
+    out_dir = os.path.dirname(os.path.abspath(output_path))
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    pdf = fitz.open()
+
+    # Cover page
+    cover = pdf.new_page(width=595, height=842)
+    margin = 36
+    rect = fitz.Rect(margin, margin, 595 - margin, 842 - margin)
+    text = [
+        f"File: {doc.file_name}",
+        f"Parts: {len(parts)} (mixed text+images in send order)",
+        "",
+        "This PDF illustrates the exact combined request order.",
+        "Each subsequent page shows one part (text or image).",
+    ]
+    cover.insert_textbox(rect, "\n".join(text), fontsize=12, fontname="helv")
+
+    # Render parts in exact order
+    idx = 0
+    for part in parts:
+        idx += 1
+        ptype = part.get("type")
+        page = pdf.new_page(width=595, height=842)
+        if ptype == "text":
+            t = str(part.get("text") or "")
+            header = f"Part {idx} — TEXT\n"
+            rect = fitz.Rect(margin, margin, 595 - margin, 842 - margin)
+            # paginate long text chunks across multiple pages
+            chunk = 3000
+            remaining = header + t
+            first = True
+            while remaining:
+                taken, remaining = remaining[:chunk], remaining[chunk:]
+                page.insert_textbox(rect, taken, fontsize=10, fontname="helv")
+                if remaining:
+                    page = pdf.new_page(width=595, height=842)
+        elif ptype == "image_url":
+            url = (part.get("image_url") or {}).get("url") or ""
+            b64 = url[len("data:image/png;base64,"):] if url.startswith("data:image") else url
+            try:
+                img_bytes = base64.b64decode(b64)
+            except Exception:
+                img_bytes = b""
+            caption_rect = fitz.Rect(margin, margin, 595 - margin, margin + 60)
+            page.insert_textbox(caption_rect, f"Part {idx} — IMAGE", fontsize=10, fontname="helv")
+            img_rect = fitz.Rect(margin, margin + 70, 595 - margin, 842 - margin)
+            try:
+                page.insert_image(img_rect, stream=img_bytes, keep_proportion=True)
+            except Exception:
+                page.insert_textbox(img_rect, "[Failed to render image]", fontsize=12, fontname="helv", color=(1, 0, 0))
+
+    # Optional appendix: raw per-page texts for reference
+    if raw_page_texts:
+        for i, txt in enumerate(raw_page_texts, start=1):
+            page = pdf.new_page(width=595, height=842)
+            rect = fitz.Rect(margin, margin, 595 - margin, 842 - margin)
+            header = f"Source Page {i} (chars: {len(txt or '')})\n"
+            page.insert_textbox(rect, header + (txt or ""), fontsize=9, fontname="helv")
 
     pdf.save(output_path)
     pdf.close()

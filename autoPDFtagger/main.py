@@ -118,10 +118,11 @@ def main():
         return args.export is not None or hasattr(args, "json") or args.csv is not None
 
     # Parallel job execution for AI + OCR based on configuration
-    if args.ai_text_analysis or args.ai_image_analysis or args.ai_combined_analysis:
-        if is_output_option_set():
+    # Trigger analyses when any AI flag is set; allow visual-debug to trigger combined dry-run
+    if args.ai_text_analysis or args.ai_image_analysis or args.ai_combined_analysis or bool(args.visual_debug):
+        if is_output_option_set() or bool(args.visual_debug):
             # If image analysis is requested, follow up with text analysis automatically
-            do_combined = bool(args.ai_combined_analysis)
+            do_combined = bool(args.ai_combined_analysis or args.visual_debug)
             do_image = bool(args.ai_image_analysis and not do_combined)
             do_text = bool((args.ai_text_analysis or args.ai_image_analysis) and not do_combined)
             # Enable OCR when any text analysis is planned and an OCR runner is available
