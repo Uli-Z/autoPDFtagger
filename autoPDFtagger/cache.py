@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 _enabled: bool = True
 _ttl_seconds: int = 24 * 60 * 60
-_base_dir: Path = Path(os.path.expanduser("~/.autoPDFtagger/config"))
+_base_dir: Path = Path(os.path.expanduser("~/.autoPDFtagger/cache"))
 
 
 def configure(
@@ -104,4 +104,3 @@ def set(bucket: str, key: str, data: dict) -> None:
                 pass
     except Exception as e:
         logging.debug("Cache write error for %s/%s: %s", bucket, key[:8], e)
-

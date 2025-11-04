@@ -57,11 +57,9 @@ Place your config at `~/.autoPDFtagger.conf`. Use `autoPDFtagger_example_config.
 
 ### Caching & Costs
 
-- 24h on‑disk cache for OCR and AI calls; default directory is `~/.autoPDFtagger/config`.
+- 24h on‑disk cache for OCR and AI calls; default directory is `~/.autoPDFtagger/cache`.
 - Disable per run with `--no-cache`.
 - The tool reports both spent and saved (cache) costs to keep runs predictable.
-
-Note: We’re considering switching the default cache directory to `~/.autoPDFtagger/cache`. If you prefer that, you can already point `[CACHE].dir` there in your config.
 
 ### Confidence Logic
 

@@ -74,7 +74,7 @@ def main():
         cache_dir = None
     # CLI --no-cache disables regardless of config
     cache.configure(enabled=(enabled and not args.no_cache), ttl_seconds=ttl_seconds, base_dir=cache_dir)
-    logging.debug("Cache configured: enabled=%s, ttl=%ss, dir=%s", str(enabled and not args.no_cache), ttl_seconds, cache_dir or "~/.autoPDFtagger/config")
+    logging.debug("Cache configured: enabled=%s, ttl=%ss, dir=%s", str(enabled and not args.no_cache), ttl_seconds, cache_dir or "~/.autoPDFtagger/cache")
 
     archive = autoPDFtagger(ocr_runner=ocr_setup.runner, ai_log_path=args.debug_ai_log)
 
