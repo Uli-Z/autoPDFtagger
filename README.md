@@ -1,5 +1,15 @@
 # autoPDFtagger
 
+## What's New in 0.2 (2025)
+
+- OCR integration via Tesseract to reliably handle low‑text/scan PDFs.
+- LiteLLM integration to open up multiple APIs and local models (OpenAI tested).
+- Parallelized job execution (OCR and AI) with a live status board and correct dependencies (images before text when both are enabled).
+- Simplified image‑analysis prioritization: early pages first, prefer larger images/scans, group tiny icons, and cap analyses per PDF (configurable).
+- 24h caching for OCR and AI calls with optional `--no-cache` and spent vs saved cost reporting.
+- Systematic test integration: expanded unit and integration tests across OCR, LLM client, image selection, CLI, and pipeline.
+
+
 ## What It Is
 
 autoPDFtagger is a CLI for semi‑automatic classification, sorting, and tagging of PDF documents. It enriches PDFs with standard metadata using OCR + AI (text and images) and is explicitly built to handle difficult inputs like low‑quality scans and image‑heavy files (e.g., presentations). Your archive remains plain files and folders (no lock‑in), with optional JSON export for review and integration.
