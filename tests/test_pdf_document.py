@@ -37,7 +37,17 @@ def test_create_new_filename(make_pdf_document):
     doc.set_creator("ACME Corp", 6)
 
     doc.create_new_filename()
-    assert doc.new_file_name == "2022-01-01-ACME Corp-Budget Memo.pdf"
+    assert doc.new_file_name == "2022-01-01-ACME-Corp-Budget-Memo.pdf"
+
+
+def test_create_new_filename_custom_format(make_pdf_document):
+    doc = make_pdf_document("2022-01-01-Memo.pdf")
+    doc.set_creation_date("2022-01-01", 8)
+    doc.set_title("Budget Memo", 7)
+    doc.set_creator("ACME Corp", 6)
+
+    doc.create_new_filename("%Y%m%d_{TITLE}.pdf")
+    assert doc.new_file_name == "20220101_Budget-Memo.pdf"
 
 
 def test_set_tags_merges_confidence(make_pdf_document):

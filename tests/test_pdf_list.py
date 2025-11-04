@@ -188,6 +188,20 @@ def test_export_to_folder_uses_new_names(tmp_path):
     assert str(export_root / "archive/year/two.pdf") in saved
 
 
+def test_create_new_filenames_uses_format(make_pdf_document):
+    # Build a real PDFDocument to exercise formatting
+    doc = make_pdf_document("2022-01-01-Memo.pdf")
+    doc.set_creation_date("2022-01-01", 8)
+    doc.set_title("Budget Memo", 7)
+    doc.set_creator("ACME Corp", 6)
+
+    pdf_list = PDFList()
+    pdf_list.add_pdf_document(doc)
+
+    pdf_list.create_new_filenames("%Y%m%d-{TITLE}.pdf")
+    assert doc.new_file_name == "20220101-Budget-Memo.pdf"
+
+
 def test_add_pdf_documents_from_folder_skips_mock_fixtures(tmp_path, caplog):
     base = tmp_path / "docs"
     base.mkdir()

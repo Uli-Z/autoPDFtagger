@@ -19,6 +19,7 @@ import fitz
 import logging
 import re
 import base64
+import unicodedata
 from datetime import datetime
 import pytz
 import traceback
@@ -952,6 +953,17 @@ class PDFDocument:
         The format can include date formatting strings and {TITLE} as a placeholder for the document title.
         If no format is provided, the default format "YY-MM-DD-{TITLE}.pdf" is used.
         """
+        def _slugify_component(value: str) -> str:
+            if not value:
+                return ""
+            # Normalize to ASCII, drop accents, then replace non-alnum with single '-'
+            normalized = unicodedata.normalize("NFKD", value)
+            ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
+            # Replace any sequence of non-alphanumeric characters with a single dash
+            sanitized = re.sub(r"[^A-Za-z0-9]+", "-", ascii_only)
+            # Trim leading/trailing dashes
+            sanitized = sanitized.strip("-")
+            return sanitized
         # Replace date parts in the format with the actual date
         if self.creation_date:
             date_str = self.creation_date.strftime(format_str)
@@ -959,9 +971,11 @@ class PDFDocument:
             # If no creation date is available, use the modification date
             date_str = self.modification_date.strftime(format_str)
 
-        # Replace {TITLE} with the document title
-        new_filename = date_str.replace('{TITLE}', self.title)
-        new_filename = new_filename.replace('{CREATOR}', self.creator)
+        # Replace placeholders with slugified components for safe filenames
+        title_slug = _slugify_component(self.title)
+        creator_slug = _slugify_component(self.creator)
+        new_filename = date_str.replace('{TITLE}', title_slug)
+        new_filename = new_filename.replace('{CREATOR}', creator_slug)
         # Store the new filename
         self.new_file_name = new_filename
         return self
