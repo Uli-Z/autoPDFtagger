@@ -20,6 +20,7 @@ autoPDFtagger is a CLI for semi‑automatic classification, sorting, and tagging
 - Vision analysis for embedded images and scans with page‑local context
 - Smart image prioritization with a per‑PDF cap for predictable runtime/costs
 - Writes standard PDF metadata and exports JSON/CSV (no proprietary DB)
+- Detects title, summary, tags, creation date, and author/creator; can rename files based on detected metadata
 - AI‑assisted tag normalization/unification across the database
 - Multi‑provider via LiteLLM (tested with OpenAI; local LLMs are supported in principle, but current vision quality may vary)
 - 24h on‑disk cache with cost spent/saved reporting
@@ -113,9 +114,10 @@ autoPDFtagger textanalysis.json imageanalysis.json --ai-tag-analysis --json fina
 ## Export & Metadata
 
 - The tool reads existing PDF metadata during analysis (title, subject/summary, author, keywords, creation date) and combines it with AI‑derived results.
+- When metadata is missing, it attempts to infer creation date and author/creator from content and context (OCR/AI).
 - Originals are never modified in place. Changes are applied only when exporting:
   - Files are copied to the chosen target folder (`-e/--export`).
-  - Copies receive standardized filenames (e.g., date + short title) when available.
+  - Copies can be renamed using detected metadata (e.g., `YYYY‑MM‑DD_short-title.pdf`).
   - Standard PDF metadata is written into the copy: Title, Summary (Subject), Author/Creator, and Tags (Keywords). Creation date is set when known.
 - You can still export JSON/CSV to audit or edit data before exporting PDFs.
 
