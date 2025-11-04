@@ -13,6 +13,7 @@ autoPDFtagger is a CLI for semi‑automatic classification, sorting, and tagging
 - AI‑assisted tag normalization/unification across the database
 - Multi‑provider via LiteLLM (tested with OpenAI; local LLMs are supported in principle, but current vision quality may vary)
 - 24h on‑disk cache with cost spent/saved reporting
+- Parallel job execution for OCR and AI with sensible dependencies (e.g., image → text when both are enabled)
 
 ## Quick Start
 
