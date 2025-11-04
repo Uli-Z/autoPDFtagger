@@ -445,9 +445,9 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     except Exception:
         token_limit = 1_000_000
     try:
-        tokens_per_image = int(config.get('AI', 'combined_tokens_per_image', fallback='4000'))
+        tokens_per_image = int(config.get('AI', 'combined_tokens_per_image', fallback='0'))
     except Exception:
-        tokens_per_image = 4000
+        tokens_per_image = 0
     try:
         priority_first_pages = int(config.get('AI', 'combined_priority_first_pages', fallback='3'))
     except Exception:
@@ -460,6 +460,10 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         image_render_max_px = int(config.get('AI', 'image_render_max_px', fallback='1536'))
     except Exception:
         image_render_max_px = 1536
+    try:
+        page_render_max_px = int(config.get('AI', 'page_render_max_px', fallback=str(image_render_max_px)))
+    except Exception:
+        page_render_max_px = image_render_max_px
     exclude_small = _cfg_bool('AI', 'combined_exclude_small_icons', fallback='true')
     try:
         # For combined mode selection rules, ignore images with min edge < 3cm by default
@@ -633,7 +637,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         "Existing document context (to be extended consistently):\n" + doc.to_api_json() + "\n\n"
         "The following content is provided in strict reading order (top→bottom, left→right) on each page."
     )
-    parts.append({"type": "text", "text": intro})
+    # Note: do NOT append intro here; it will be added once in the final assembly
 
     # Aggregate all text per page once, then emit it at the first text occurrence on that page
     page_text_map: Dict[int, str] = {}
@@ -692,11 +696,6 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             new_parts.append((p, t[:max(1, cut)]))
         text_parts = new_parts
 
-    # Build initial parts (intro + trimmed page texts)
-    parts.append({"type": "text", "text": intro})
-    for _, t in text_parts:
-        parts.append({"type": "text", "text": t})
-
     # Select images under remaining budget and following priority
     used_tokens = intro_tokens + sum(_tok_len(t) for _, t in text_parts)
     remaining = max(0, token_limit - used_tokens)
@@ -720,30 +719,65 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
 
     selected_pages_full: set[int] = set()
     selected_images: set[int] = set()
+
+    # Helper: estimate image token cost per OpenAI tiling guidance
+    import math
+    def _estimate_tokens_for_candidate(c: Dict[str, Any]) -> int:
+        if tokens_per_image and tokens_per_image > 0:
+            return int(tokens_per_image)
+        try:
+            page_idx0 = int(c.get("page", 1)) - 1
+            if c.get("kind") == "page":
+                # Use page dimensions
+                pw = float(doc.pages[page_idx0].get("width", 0) or 0)
+                ph = float(doc.pages[page_idx0].get("height", 0) or 0)
+                longest = max(pw, ph)
+                scale = (min(1.0, float(page_render_max_px) / float(longest)) if longest > 0 and page_render_max_px else 1.0)
+                wpx = max(1, int(pw * scale))
+                hpx = max(1, int(ph * scale))
+            else:
+                # Region bbox
+                x0, y0, x1, y1 = c.get("bbox")
+                rw = float(x1 - x0)
+                rh = float(y1 - y0)
+                longest = max(rw, rh)
+                scale = (min(1.0, float(image_render_max_px) / float(longest)) if longest > 0 and image_render_max_px else 1.0)
+                wpx = max(1, int(rw * scale))
+                hpx = max(1, int(rh * scale))
+            tiles = int(math.ceil(wpx / 512.0) * math.ceil(hpx / 512.0))
+            return int(85 + 170 * tiles)
+        except Exception:
+            # Conservative fallback
+            return 4000
     for c in ordered:
-        if remaining < tokens_per_image:
-            break
+        c_tokens = _estimate_tokens_for_candidate(c)
+        if remaining < c_tokens:
+            continue
         if c.get("kind") == "page":
             selected_pages_full.add(int(c.get("page") or 0))
-            remaining -= tokens_per_image
+            remaining -= c_tokens
         else:
             p = int(c.get("page") or 0)
             if p in selected_pages_full:
                 continue
             selected_images.add(int(c.get("id") or 0))
-            remaining -= tokens_per_image
+            remaining -= c_tokens
 
-    # Emit images per page in natural order, right after page text
+    # Build final parts in page order: intro, then for each page -> text then images
+    parts.append({"type": "text", "text": intro})
+    trimmed_text_by_page: Dict[int, str] = {p: t for (p, t) in text_parts}
     pages_in_doc = sorted({*page_text_map.keys(), *[int(m.get('page')) for m in image_candidates]})
     for p in pages_in_doc:
-        # find insertion index: after the page's text part we added
-        # Simpler: append in order since parts are sequential; acceptable for debugging and clarity.
+        # 1) Page text (if any after trimming)
+        t = trimmed_text_by_page.get(p)
+        if t:
+            parts.append({"type": "text", "text": t})
+        # 2) Images for this page
         if p in selected_pages_full:
             b64 = doc.render_page_png_base64(p - 1, max_px=image_render_max_px) or ""
             if b64:
                 parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
         else:
-            # emit selected region images on this page ordered by encounter id
             metas = [m for m in image_candidates if int(m["page"]) == p and int(m.get("id", 0)) in selected_images]
             metas.sort(key=lambda m: int(m.get("id", 0)))
             for m in metas:
