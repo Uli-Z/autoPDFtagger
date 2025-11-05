@@ -15,6 +15,10 @@ from autoPDFtagger.ai_common import (
     normalize_confidence_numbers as _normalize2,
 )
 
+# Backwards-compat shims for tests referencing legacy helpers
+def _json_guard(text: str) -> str:
+    return _json_guard2(text)
+
 
 def _lang() -> str:
     try:
@@ -87,14 +91,15 @@ def analyze_text(
     except Exception:
         token_limit = 1_000_000
 
-    budget = _apply_budget("text", doc.file_name, system, user, token_limit)
+    filename = getattr(doc, 'file_name', '<document>')
+    budget = _apply_budget("text", filename, system, user, token_limit)
     if budget.get("abort"):
         return None, {"cost": 0.0, "dry_run": True, "skipped_reason": budget.get("reason")}
     user = budget.get("user_text", user)
     messages[1]["content"] = user
     try:
         used = int(budget.get("used_tokens") or (_tok_est(system) + _tok_est(user)))
-        _log_req("text", doc.file_name, parts=0, text_tokens=used, image_tokens=None, total_tokens=used, token_limit=token_limit)
+        _log_req("text", filename, parts=0, text_tokens=used, image_tokens=None, total_tokens=used, token_limit=token_limit)
     except Exception:
         pass
 
@@ -298,6 +303,11 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
     if not model:
         logging.info("Image analysis skipped (no model configured)")
         return None, {"cost": 0.0}
+
+    # Allow deterministic test runs using mock files next to the PDF
+    if mock_provider.is_mock_model(model):
+        response, usage = mock_provider.fetch(doc, "image", context=None)
+        return response, usage
 
     # Build candidate list with scoring and then render b64 + context in order
     cands = _select_images_for_analysis(doc)

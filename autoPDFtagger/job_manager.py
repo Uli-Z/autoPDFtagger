@@ -1,9 +1,10 @@
 import logging
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Set
 
 from autoPDFtagger.logging_utils import board_state
 
@@ -43,6 +44,8 @@ class JobManager:
         self._status_thread: Optional[threading.Thread] = None
         self._spinner_index = 0
         self._last_log_time = 0.0
+        # Track which kind status bars have been finalized and logged
+        self._finalized_kinds: Set[str] = set()
 
     def add_job(self, job: Job) -> None:
         with self._lock:
@@ -106,12 +109,50 @@ class JobManager:
                         f"done {metrics['d']} · failed {metrics['f']}"
                     )
 
+                def render_done_line(label: str, metrics: Dict[str, int]) -> str:
+                    bar = render_bar(metrics)
+                    prefix = "✅ " if metrics.get("f", 0) == 0 else "⚠️ "
+                    return (
+                        f"{prefix}{label:<5} {bar} "
+                        f"pending {metrics['p']} · running {metrics['r']} · "
+                        f"done {metrics['d']} · failed {metrics['f']}"
+                    )
+
                 ordered_kinds = [
                     ("OCR", "OCR", kinds["ocr"]),
                     ("AI-Text", "AI-Text-Analysis", kinds["text"]),
                     ("AI-Image", "AI-Image-Analysis", kinds["image"]),
                 ]
                 active = [(short, full, metrics) for short, full, metrics in ordered_kinds if metrics["p"] or metrics["r"]]
+
+                # Flush finished kinds once with a non-sticky, checkmarked status line
+                finished_kinds: List[Tuple[str, str, Dict[str, int]]] = []
+                for key, (_, full_label, metrics) in zip(["ocr", "text", "image"], ordered_kinds):
+                    if key in self._finalized_kinds:
+                        continue
+                    if metrics["p"] == 0 and metrics["r"] == 0 and (metrics["d"] + metrics["f"]) > 0:
+                        finished_kinds.append((key, full_label, metrics))
+                        self._finalized_kinds.add(key)
+
+                # Log finalized lines; upgrade to WARNING when failures occurred
+                for key, label, metrics in finished_kinds:
+                    line = render_done_line(label, metrics)
+                    if metrics.get("f", 0) > 0:
+                        logging.warning(line)
+                        # Collect failed file names for this kind and log them
+                        failed_files: List[str] = []
+                        with self._lock:
+                            for j in self.jobs.values():
+                                if j.kind == key and j.status == "failed":
+                                    try:
+                                        _kind, path = j.id.split(":", 1)
+                                    except ValueError:
+                                        path = j.id
+                                    failed_files.append(os.path.basename(path) or path)
+                        if failed_files:
+                            logging.warning("Failed %s files (%d): %s", label, len(failed_files), ", ".join(sorted(failed_files)))
+                    else:
+                        logging.info(line)
 
                 status_lines = []
                 for idx, (short_label, full_label, metrics) in enumerate(active):

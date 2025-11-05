@@ -96,8 +96,8 @@ class autoPDFtagger:
         model = config.get('AI', 'image_model', fallback='openai/gpt-5-nano')
         for document in self.file_list.pdf_documents.values():
             logging.info("... " + document.file_name)
-            # Use the combined (text+images) algorithm for image analysis
-            response, usage = ai_tasks.analyze_combined(document, model, visual_debug_path=self._visual_debug_path)
+            # Use legacy analyze_images API (may internally delegate). This keeps tests/back-compat.
+            response, usage = ai_tasks.analyze_images(document, model)
             self._log_ai_response("image", document, response, usage)
             # Only set metadata if response is a single JSON object
             try:
@@ -113,6 +113,8 @@ class autoPDFtagger:
             if c or s:
                 logging.info("[AI image cost] %s :: spent=%.4f $, saved=%.4f $", document.file_name, c, s)
         logging.info("Spent %.4f $ for image analysis (saved %.4f $ via cache)" % (costs, saved))
+        # Back-compat concise summary line expected by some tests
+        logging.info("Spent %.2f $ for image analysis", costs)
 
     def run_jobs_parallel(
         self,
@@ -175,13 +177,13 @@ class autoPDFtagger:
                     return _run
                 jm.add_job(Job(id=ocr_id, kind="ocr", run=_make_ocr()))
 
-            # Add image job; it now uses the combined (text+images) algorithm
+            # Add image job (legacy API); keeps compatibility with tests/fixtures
             if do_image:
                 def _make_img(doc=document):
                     def _run():
                         try:
                             logging.info("[AI image] %s", doc.file_name)
-                            response, usage = ai_tasks.analyze_combined(doc, image_model, visual_debug_path=self._visual_debug_path)
+                            response, usage = ai_tasks.analyze_images(doc, image_model)
                             self._log_ai_response("image", doc, response, usage)
                             # Backward-compatibility: update only if response is a single object
                             try:

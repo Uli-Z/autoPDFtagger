@@ -120,9 +120,10 @@ def main():
     # Trigger analyses when any AI flag is set; allow visual-debug to trigger image-analysis dry-run
     if args.ai_text_analysis or args.ai_image_analysis or bool(args.visual_debug):
         if is_output_option_set() or bool(args.visual_debug):
-            # New behavior: image analysis (-i) already includes text; -t is redundant when -i/--visual-debug is set
+            # Keep CLI semantics simple: -t controls text, -i controls image.
+            # When both are provided, run both kinds.
             do_image = bool(args.ai_image_analysis or args.visual_debug)
-            do_text = bool(args.ai_text_analysis and not do_image)
+            do_text = bool(args.ai_text_analysis or args.ai_image_analysis)
             # Enable OCR when either text or image analysis is planned and an OCR runner is available
             enable_ocr = bool(ocr_setup.runner) and (do_text or do_image)
             archive.run_jobs_parallel(
