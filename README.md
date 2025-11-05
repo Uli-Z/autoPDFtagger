@@ -1,11 +1,23 @@
 # autoPDFtagger
 
+## What's New in 0.3 (2025)
+
+- Image analysis is simpler: `-i` now includes the relevant page text; combining `-t` with `-i` is no longer needed.
+- Better results on scans and slide decks: improved titles, summaries, and tags.
+- Faster and cheaper runs: fewer requests and clearer progress.
+- Predictable token limit per file via `[AI].token_limit`; trims less important content first and may skip low‑signal images when needed.
+
+Includes improvements from 0.2:
+- OCR (Tesseract) for scan/low‑text PDFs.
+- LiteLLM multi‑provider support (OpenAI tested).
+- Parallel job execution with a live status board.
+- 24h caching with optional `--no-cache` and cost reporting.
+
 ## What's New in 0.2 (2025)
 
 - OCR integration via Tesseract to reliably handle low‑text/scan PDFs.
 - LiteLLM integration to open up multiple APIs and local models (OpenAI tested).
 - Parallelized job execution (OCR and AI) with a live status board and correct dependencies (images before text when both are enabled).
-- Simplified image‑analysis prioritization: early pages first, prefer larger images/scans, group tiny icons, and cap analyses per PDF (configurable).
 - 24h caching for OCR and AI calls with optional `--no-cache` and spent vs saved cost reporting.
 - Systematic test integration: expanded unit and integration tests across OCR, LLM client, image selection, CLI, and pipeline.
 

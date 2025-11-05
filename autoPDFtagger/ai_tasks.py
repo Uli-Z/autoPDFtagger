@@ -23,93 +23,6 @@ def _lang() -> str:
         return "English"
 
 
-def _json_guard(text: str) -> str:
-    """Return a JSON object string extracted from model output.
-
-    - If `text` is empty/None, return "{}".
-    - If `text` is already valid JSON, return as-is.
-    - Otherwise, try to slice the outermost {...} substring; fall back to "{}".
-    """
-    try:
-        if not text:
-            return "{}"
-        # Already valid JSON?
-        json.loads(text)
-        return text
-    except Exception:
-        try:
-            s = str(text)
-            start = s.find("{")
-            end = s.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                return s[start : end + 1]
-        except Exception:
-            pass
-        return "{}"
-
-
-def _normalize_confidence_numbers(data: Any, source: Optional[str] = None) -> Any:
-    """Normalize confidence scales to 0..10 when models return 0..1.
-
-    - If an object has only confidence values <= 1.0, scale all its *_confidence fields
-      (and tags_confidence list) by 10 and round to nearest int, clamped to [0, 10].
-    - Works for a dict or a list of dicts.
-    """
-    def _clamp(x: float) -> int:
-        try:
-            v = int(round(float(x) * 10.0))
-            return max(0, min(10, v))
-        except Exception:
-            return 0
-
-    def _process_obj(obj: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
-        # Collect all confidence-like values
-        vals: list[float] = []
-        for k, v in obj.items():
-            if k.endswith("_confidence") and isinstance(v, (int, float)):
-                vals.append(float(v))
-        tc = obj.get("tags_confidence")
-        if isinstance(tc, list):
-            for v in tc:
-                if isinstance(v, (int, float)):
-                    vals.append(float(v))
-        if not vals:
-            return obj, False
-        if max(vals) <= 1.0:
-            # Scale all *_confidence and tags_confidence
-            new_obj = dict(obj)
-            for k, v in obj.items():
-                if k.endswith("_confidence") and isinstance(v, (int, float)):
-                    new_obj[k] = _clamp(float(v))
-            if isinstance(tc, list):
-                new_obj["tags_confidence"] = [
-                    _clamp(float(v)) if isinstance(v, (int, float)) else v for v in tc
-                ]
-            return new_obj, True
-        return obj, False
-
-    try:
-        if isinstance(data, dict):
-            obj, changed = _process_obj(data)
-            if changed:
-                logging.info("[confidence normalize] source=%s scaled 0..1 → 0..10", source or "unknown")
-            return obj
-        if isinstance(data, list):
-            changed_any = False
-            out: List[Any] = []
-            for x in data:
-                if isinstance(x, dict):
-                    nx, changed = _process_obj(x)
-                    changed_any = changed_any or changed
-                    out.append(nx)
-                else:
-                    out.append(x)
-            if changed_any:
-                logging.info("[confidence normalize] source=%s scaled 0..1 → 0..10 (array)", source or "unknown")
-            return out
-    except Exception:
-        pass
-    return data
 
 
 def analyze_text(
@@ -598,6 +511,162 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         text = (text or "").strip()
         return text if n <= 0 or len(text) <= n else (text[:n] + "…")
 
+    # Phase A: extract elements (text/images/figures) in reading order and raw page texts
+    def _extract_elements_and_candidates() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
+        # Build sequential text per page (forcing OCR per-page if needed for best quality)
+        page_texts: List[str] = []
+        try:
+            doc.analyze_document_images()
+            page_count = len(getattr(doc, 'pages', []) or [])
+        except Exception:
+            page_count = 0
+        if page_count <= 0:
+            flat = doc.get_pdf_text() or ""
+            page_texts = [flat]
+        else:
+            for idx in range(page_count):
+                t = doc.get_page_text(idx, use_ocr_if_needed=True)
+                page_texts.append(t or "")
+
+        elements: List[Dict[str, Any]] = []
+        image_candidates: List[Dict[str, Any]] = []
+
+        # Tame verbose third-party logging at DEBUG level
+        try:
+            for _name in (
+                "pdfminer",
+                "pdfminer.pdfparser",
+                "pdfminer.psparser",
+                "pdfminer.pdfinterp",
+                "pdfminer.layout",
+                "pdfminer.high_level",
+            ):
+                _lg = logging.getLogger(_name)
+                _lg.setLevel(logging.WARNING)
+                _lg.propagate = True
+        except Exception:
+            pass
+
+        try:
+            from pdfminer.high_level import extract_pages  # type: ignore
+            from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTImage, LTFigure  # type: ignore
+        except Exception as e:
+            logging.error("pdfminer.six is required for image analysis (combined algorithm): %s", e)
+            return [], [], page_texts
+
+        try:
+            char_margin = float(config.get('AI', 'image_char_margin', fallback=config.get('AI', 'combined_char_margin', fallback='2.0')))
+        except Exception:
+            char_margin = 2.0
+        try:
+            line_margin = float(config.get('AI', 'image_line_margin', fallback=config.get('AI', 'combined_line_margin', fallback='0.5')))
+        except Exception:
+            line_margin = 0.5
+        laparams = LAParams(char_margin=char_margin, line_margin=line_margin, boxes_flow=None)
+
+        def _iter_layout(obj):
+            # Depth-first: figures yield as a single node; we may expand later based on heuristic
+            if isinstance(obj, (LTTextBox, LTTextLine)):
+                yield ("text", obj.bbox, obj.get_text(), None)
+            elif isinstance(obj, LTImage):
+                yield ("image", obj.bbox, None, None)
+            elif isinstance(obj, LTFigure):
+                yield ("figure", obj.bbox, None, obj)
+            else:
+                if hasattr(obj, "__iter__"):
+                    for x in obj:
+                        yield from _iter_layout(x)
+
+        def _figure_metrics(fig) -> Dict[str, int]:
+            words = 0
+            imgs = 0
+            shapes = 0
+            stack = [fig]
+            while stack:
+                o = stack.pop()
+                cls = o.__class__.__name__
+                if cls in ("LTLine", "LTRect", "LTCurve"):
+                    shapes += 1
+                    continue
+                if isinstance(o, LTImage):
+                    imgs += 1
+                    continue
+                if isinstance(o, (LTTextBox, LTTextLine)):
+                    try:
+                        words += len((o.get_text() or "").split())
+                    except Exception:
+                        pass
+                    stack[0:0] = list(_iter_layout(o))
+                else:
+                    stack[0:0] = list(_iter_layout(o))
+            return {"words": words, "images": imgs, "shapes": shapes}
+
+        try:
+            max_words_in_figure = int(config.get('AI', 'image_figure_max_words', fallback=config.get('AI', 'combined_figure_max_words', fallback='20')))
+        except Exception:
+            max_words_in_figure = 20
+        try:
+            min_shapes_in_figure = int(config.get('AI', 'image_figure_min_shapes', fallback=config.get('AI', 'combined_figure_min_shapes', fallback='2')))
+        except Exception:
+            min_shapes_in_figure = 2
+        capture_figures = _cfg_bool('AI', 'image_capture_figures', fallback=config.get('AI', 'combined_capture_figures', fallback='true'))
+
+        img_order_counter = 0
+        for page_no, layout in enumerate(extract_pages(doc.get_absolute_path(), laparams=laparams), start=1):
+            page_items = []
+            for item in _iter_layout(layout):
+                page_items.append(item)
+            i = 0
+            while i < len(page_items):
+                kind, bbox, text, meta = page_items[i]
+                if kind == "text":
+                    elements.append({"type": "text", "text": text, "page": page_no})
+                    i += 1
+                    continue
+                if kind == "image":
+                    try:
+                        w_cm = PDFDocument._points_to_cm(float(bbox[2] - bbox[0]))  # type: ignore[attr-defined]
+                        h_cm = PDFDocument._points_to_cm(float(bbox[3] - bbox[1]))  # type: ignore[attr-defined]
+                        is_small = min(w_cm, h_cm) < float(min_icon_edge_cm)
+                    except Exception:
+                        is_small = False
+                    if exclude_small and is_small:
+                        i += 1
+                        continue
+                    img_order_counter += 1
+                    area = float(max(0.0, (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])))
+                    image_candidates.append({"id": img_order_counter, "page": page_no, "bbox": bbox, "area": area, "kind": "image"})
+                    elements.append({"type": "image", "id": img_order_counter, "page": page_no})
+                    i += 1
+                    continue
+                if kind == "figure":
+                    fig = meta
+                    take = False
+                    if capture_figures:
+                        m = _figure_metrics(fig)
+                        try:
+                            w_cm = PDFDocument._points_to_cm(float(bbox[2] - bbox[0]))  # type: ignore[attr-defined]
+                            h_cm = PDFDocument._points_to_cm(float(bbox[3] - bbox[1]))  # type: ignore[attr-defined]
+                            big_enough = min(w_cm, h_cm) >= float(min_icon_edge_cm)
+                        except Exception:
+                            big_enough = True
+                        take = big_enough and (m.get("shapes", 0) >= min_shapes_in_figure) and (m.get("words", 0) <= max_words_in_figure)
+                    if take:
+                        img_order_counter += 1
+                        area = float(max(0.0, (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])))
+                        image_candidates.append({"id": img_order_counter, "page": page_no, "bbox": bbox, "area": area, "kind": "figure"})
+                        elements.append({"type": "image", "id": img_order_counter, "page": page_no})
+                        i += 1
+                    else:
+                        inner = []
+                        for item in _iter_layout(fig):
+                            inner.append(item)
+                        page_items[i:i+1] = inner
+                    continue
+                i += 1
+        return elements, image_candidates, page_texts
+
+
     # Build sequential text per page (forcing OCR per-page if needed for best quality)
     page_texts: List[str] = []
     try:
@@ -1061,10 +1130,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
 
     # Pre-call summary log including token estimates
     try:
-        logging.debug(
-            "[image request] tokens: text≈%d, images≈%d, total≈%d/%d (parts=%d)",
-            used_tokens, image_tokens_spent, used_tokens + image_tokens_spent, token_limit, len(parts)
-        )
+        _log_req("image", doc.file_name, parts=len(parts), text_tokens=used_tokens, image_tokens=image_tokens_spent, total_tokens=used_tokens + image_tokens_spent, token_limit=token_limit)
     except Exception:
         pass
 
