@@ -17,7 +17,27 @@ def _lang() -> str:
 
 
 def _json_guard(text: str) -> str:
-    if not text:
+    """Return a JSON object string extracted from model output.
+
+    - If `text` is empty/None, return "{}".
+    - If `text` is already valid JSON, return as-is.
+    - Otherwise, try to slice the outermost {...} substring; fall back to "{}".
+    """
+    try:
+        if not text:
+            return "{}"
+        # Already valid JSON?
+        json.loads(text)
+        return text
+    except Exception:
+        try:
+            s = str(text)
+            start = s.find("{")
+            end = s.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                return s[start : end + 1]
+        except Exception:
+            pass
         return "{}"
 
 
@@ -83,18 +103,6 @@ def _normalize_confidence_numbers(data: Any, source: Optional[str] = None) -> An
     except Exception:
         pass
     return data
-    # Try to extract JSON object
-    try:
-        # If it's valid JSON already, return as-is
-        json.loads(text)
-        return text
-    except Exception:
-        # Heuristic: find braces
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            return text[start : end + 1]
-        return "{}"
 
 
 def analyze_text(
