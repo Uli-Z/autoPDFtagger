@@ -430,6 +430,14 @@ def run_vision(
         cache.set("vision", key, {"text": text or "", "usage": usage})
     except Exception:
         pass
+    # Post-call usage debug (helps see total tokens incl. images if provider supplies it)
+    try:
+        logging.debug(
+            "LLM vision usage: prompt_tokens=%s, completion_tokens=%s, total_tokens=%s, cost=%.4f $",
+            str(usage.get("prompt_tokens")), str(usage.get("completion_tokens")), str(usage.get("total_tokens")), float(usage.get("cost", 0.0) or 0.0)
+        )
+    except Exception:
+        pass
     return text or "", usage
 def _rates_from_config(model: str) -> Optional[Tuple[float, float]]:
     """Try to read pricing from config [PRICING] section.

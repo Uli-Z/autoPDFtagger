@@ -756,17 +756,6 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             prev = page_text_map.get(p, "")
             page_text_map[p] = (prev + ("\n\n" if prev else "") + txt)
 
-    # Aggregate once per page
-    page_text_map: Dict[int, str] = {}
-    for el in elements:
-        if el.get("type") == "text":
-            p = int(el.get("page") or 0)
-            txt = str(el.get("text") or "").strip()
-            if not txt:
-                continue
-            prev = page_text_map.get(p, "")
-            page_text_map[p] = (prev + ("\n\n" if prev else "") + txt)
-
     # Estimate token usage for intro + page texts; trim proportionally if exceeding token_limit
     try:
         import tiktoken  # type: ignore
@@ -787,6 +776,13 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     intro_tokens = _tok_len(intro)
     page_tokens = [(_tok_len(t)) for _, t in text_parts]
     sum_text = intro_tokens + sum(page_tokens)
+    # Hard guard: if the intro (system prompt + context) alone exceeds the limit, abort cleanly
+    if intro_tokens > token_limit:
+        logging.info(
+            "[combined budget] intro exceeds limit: intro≈%d > limit=%d; aborting request",
+            intro_tokens, token_limit,
+        )
+        return None, {"cost": 0.0, "dry_run": True, "skipped_reason": "intro_exceeds_limit"}
     trimmed_happened = False
     if sum_text > token_limit:
         # Proportional trimming across pages only; keep intro intact
@@ -831,6 +827,9 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
 
     selected_pages_full: set[int] = set()
     selected_images: set[int] = set()
+    # Optional per-candidate rendering overrides (for adaptive downscaling)
+    # keys: ("page", page_no) or ("id", image_id)
+    render_px_override: Dict[Tuple[str, int], int] = {}
     image_tokens_spent = 0
     skipped_due_budget = 0
 
@@ -863,22 +862,43 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         except Exception:
             # Conservative fallback
             return 4000
+    # Verbose candidate decision debug (helps understand scan pages & budgets)
     for c in ordered:
         c_tokens = _estimate_tokens_for_candidate(c)
+        c_kind = str(c.get("kind"))
+        c_page = int(c.get("page") or 0)
+        before = remaining
         if remaining < c_tokens:
             skipped_due_budget += 1
+            logging.debug(
+                "[combined budget] skip %s p=%d need≈%d > remaining≈%d",
+                c_kind, c_page, c_tokens, before,
+            )
             continue
-        if c.get("kind") == "page":
-            selected_pages_full.add(int(c.get("page") or 0))
+        if c_kind == "page":
+            selected_pages_full.add(c_page)
             remaining -= c_tokens
             image_tokens_spent += c_tokens
+            logging.debug(
+                "[combined budget] take page p=%d cost≈%d → remaining≈%d",
+                c_page, c_tokens, remaining,
+            )
         else:
-            p = int(c.get("page") or 0)
-            if p in selected_pages_full:
+            # region/image candidate
+            if c_page in selected_pages_full:
+                logging.debug(
+                    "[combined budget] skip region on p=%d (full page already selected)",
+                    c_page,
+                )
                 continue
-            selected_images.add(int(c.get("id") or 0))
+            img_id = int(c.get("id") or 0)
+            selected_images.add(img_id)
             remaining -= c_tokens
             image_tokens_spent += c_tokens
+            logging.debug(
+                "[combined budget] take region id=%d p=%d cost≈%d → remaining≈%d",
+                img_id, c_page, c_tokens, remaining,
+            )
 
     if skipped_due_budget > 0:
         logging.info(
@@ -887,6 +907,66 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             len(selected_pages_full), len(selected_images), image_tokens_spent,
             used_tokens + image_tokens_spent, token_limit,
         )
+
+    # Adaptive fallback for scan-like PDFs: if nothing fit but there are candidates, try a downscaled single image
+    if not selected_pages_full and not selected_images and ordered:
+        # try to fit at least a 1-tile render (≈255 tokens) or as many tiles as budget allows
+        # Determine tiles we can afford within remaining (subtract a small safety of 10 tokens)
+        safety = 10
+        afford = max(0, remaining - safety)
+        if afford >= 85 + 170 * 1:
+            # choose the first candidate (prefer page if present among early set)
+            best = None
+            for c in ordered:
+                if c.get("kind") == "page":
+                    best = c
+                    break
+            if best is None:
+                best = ordered[0]
+            # Compute minimal max_px so that tiles fit into 'afford'
+            try:
+                import math
+                if best.get("kind") == "page":
+                    pno = int(best.get("page") or 1)
+                    idx0 = pno - 1
+                    pw = float(doc.pages[idx0].get("width", 0) or 0)
+                    ph = float(doc.pages[idx0].get("height", 0) or 0)
+                    target_tiles = max(1, min(9, int((afford - 85) // 170)))
+                    # derive a max_px along longest edge so tiles<=target_tiles
+                    # heuristic: try to fit into sqrt(target_tiles) tiles per side
+                    per_side = int(math.ceil(math.sqrt(target_tiles)))
+                    longest_target = max(1, per_side * 512)
+                    # ensure we don't upscale beyond configured max
+                    px = int(min(page_render_max_px, longest_target))
+                    render_px_override[("page", pno)] = px
+                    selected_pages_full.add(pno)
+                    image_tokens_spent += int(85 + 170 * (per_side * per_side))
+                    remaining = max(0, remaining - int(85 + 170 * (per_side * per_side)))
+                    logging.info(
+                        "[combined budget] adaptive include page p=%d at ~%dpx (tiles≈%d)",
+                        pno, px, per_side * per_side,
+                    )
+                else:
+                    # region candidate
+                    pno = int(best.get("page") or 1)
+                    x0, y0, x1, y1 = best.get("bbox")
+                    rw = float(x1 - x0)
+                    rh = float(y1 - y0)
+                    target_tiles = max(1, min(9, int((afford - 85) // 170)))
+                    per_side = int(math.ceil(math.sqrt(target_tiles)))
+                    longest_target = max(1, per_side * 512)
+                    px = int(min(image_render_max_px, longest_target))
+                    img_id = int(best.get("id") or 0)
+                    render_px_override[("id", img_id)] = px
+                    selected_images.add(img_id)
+                    image_tokens_spent += int(85 + 170 * (per_side * per_side))
+                    remaining = max(0, remaining - int(85 + 170 * (per_side * per_side)))
+                    logging.info(
+                        "[combined budget] adaptive include region id=%d p=%d at ~%dpx (tiles≈%d)",
+                        img_id, pno, px, per_side * per_side,
+                    )
+            except Exception as _e:
+                logging.debug("[combined budget] adaptive include failed: %s", _e)
 
     # Build final parts in page order: intro, then for each page -> text then images
     parts.append({"type": "text", "text": intro})
@@ -899,14 +979,17 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             parts.append({"type": "text", "text": t})
         # 2) Images for this page
         if p in selected_pages_full:
-            b64 = doc.render_page_png_base64(p - 1, max_px=image_render_max_px) or ""
+            # Use per-candidate override when present; otherwise page_render_max_px
+            px = render_px_override.get(("page", p), page_render_max_px)
+            b64 = doc.render_page_png_base64(p - 1, max_px=px) or ""
             if b64:
                 parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
         else:
             metas = [m for m in image_candidates if int(m["page"]) == p and int(m.get("id", 0)) in selected_images]
             metas.sort(key=lambda m: int(m.get("id", 0)))
             for m in metas:
-                b64 = doc.render_page_region_png_base64(p - 1, m["bbox"], max_px=image_render_max_px, coords="pdfminer") or ""
+                px = render_px_override.get(("id", int(m.get("id") or 0)), image_render_max_px)
+                b64 = doc.render_page_region_png_base64(p - 1, m["bbox"], max_px=px, coords="pdfminer") or ""
                 if b64:
                     parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
 
@@ -928,6 +1011,15 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             logging.info("Wrote visual debug PDF: %s", visual_debug_path)
         except Exception as _e:
             logging.warning("Failed to write visual debug PDF '%s': %s", visual_debug_path, _e)
+
+    # Pre-call summary log including token estimates
+    try:
+        logging.debug(
+            "[combined request] tokens: text≈%d, images≈%d, total≈%d/%d (parts=%d)",
+            used_tokens, image_tokens_spent, used_tokens + image_tokens_spent, token_limit, len(parts)
+        )
+    except Exception:
+        pass
 
     if dry_run:
         # Skip any actual AI request when visual-debug is active (or model missing)
