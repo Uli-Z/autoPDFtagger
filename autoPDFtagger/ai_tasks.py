@@ -425,7 +425,18 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     """
     dry_run = visual_debug_path is not None or not model
     if not model and not visual_debug_path:
-        logging.info("Combined analysis skipped (no model configured)")
+        try:
+            cm = (config.get('AI', 'combined_model', fallback='') or '').strip()
+        except Exception:
+            cm = ''
+        try:
+            im = (config.get('AI', 'image_model', fallback='') or '').strip()
+        except Exception:
+            im = ''
+        logging.error(
+            "Combined analysis skipped: no model configured (combined_model='%s', image_model='%s'). "
+            "Set one of them in your config.", cm or '(empty)', im or '(empty)'
+        )
         return None, {"cost": 0.0}
 
     # Optional: allow using mock provider for deterministic tests
@@ -498,6 +509,22 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     elements: List[Dict[str, Any]] = []
     image_manifest_lines: List[str] = []
     images_b64: List[str] = []
+
+    # Tame verbose third-party logging at DEBUG level
+    try:
+        for _name in (
+            "pdfminer",
+            "pdfminer.pdfparser",
+            "pdfminer.psparser",
+            "pdfminer.pdfinterp",
+            "pdfminer.layout",
+            "pdfminer.high_level",
+        ):
+            _lg = logging.getLogger(_name)
+            _lg.setLevel(logging.WARNING)
+            _lg.propagate = True
+    except Exception:
+        pass
 
     from pdfminer.high_level import extract_pages
     from pdfminer.layout import (
@@ -806,7 +833,9 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
 
     if dry_run:
         # Skip any actual AI request when visual-debug is active (or model missing)
-        return None, {"cost": 0.0, "dry_run": True, "skipped_reason": ("visual_debug" if visual_debug_path else "no_model")}
+        reason = "visual_debug" if visual_debug_path else "no_model"
+        logging.info("[combined] Skipping API call (reason=%s)", reason)
+        return None, {"cost": 0.0, "dry_run": True, "skipped_reason": reason}
 
     try:
         try:

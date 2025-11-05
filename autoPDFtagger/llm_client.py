@@ -289,7 +289,8 @@ def run_vision(
 ) -> Tuple[str, Dict[str, Any]]:
     """Run a vision-capable chat with image inputs. Raises RuntimeError if unsupported.
     """
-    if not images_b64:
+    # Allow "parts" mode (mixed text+images) without requiring images_b64
+    if not images_b64 and parts is None:
         return "", {"cost": 0.0}
 
     if completion is None:
@@ -335,7 +336,10 @@ def run_vision(
         key = hashlib.sha256(key_str.encode("utf-8")).hexdigest()
         cached = cache.get("vision", key)
         if cached and isinstance(cached, dict) and "text" in cached:
-            logging.info("Vision cache hit (model=%s, images=%d)", model, len(images_b64))
+            if parts is None:
+                logging.info("Vision cache hit (model=%s, images=%d)", model, len(images_b64))
+            else:
+                logging.info("Vision cache hit (model=%s, parts=%d)", model, len(key_obj.get("parts", [])))
             prev_usage = dict(cached.get("usage") or {})
             saved = float(prev_usage.get("cost", 0.0) or 0.0)
             usage = {"cost": 0.0, "saved_cost": saved, "cache_hit": True}

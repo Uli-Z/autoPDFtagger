@@ -11,7 +11,7 @@ from autoPDFtagger.logging_utils import board_state
 @dataclass
 class Job:
     id: str
-    kind: str  # 'ocr' | 'text' | 'image'
+    kind: str  # 'ocr' | 'text' | 'image' | 'combined'
     run: Callable[[], None]
     deps: List[str] = field(default_factory=list)
     status: str = "pending"  # pending | running | done | failed
@@ -58,6 +58,7 @@ class JobManager:
                     "ocr": {"p": 0, "r": 0, "d": 0, "f": 0},
                     "text": {"p": 0, "r": 0, "d": 0, "f": 0},
                     "image": {"p": 0, "r": 0, "d": 0, "f": 0},
+                    "combined": {"p": 0, "r": 0, "d": 0, "f": 0},
                 }
                 with self._lock:
                     for j in self.jobs.values():
@@ -110,6 +111,7 @@ class JobManager:
                     ("OCR", "OCR", kinds["ocr"]),
                     ("AI-Text", "AI-Text-Analysis", kinds["text"]),
                     ("AI-Image", "AI-Image-Analysis", kinds["image"]),
+                    ("AI-Combined", "AI-Combined-Analysis", kinds["combined"]),
                 ]
                 active = [(short, full, metrics) for short, full, metrics in ordered_kinds if metrics["p"] or metrics["r"]]
 

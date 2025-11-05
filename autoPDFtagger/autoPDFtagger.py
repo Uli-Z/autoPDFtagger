@@ -111,7 +111,7 @@ class autoPDFtagger:
             saved += s
             if c or s:
                 logging.info("[AI image cost] %s :: spent=%.4f $, saved=%.4f $", document.file_name, c, s)
-        logging.info("Spent %.2f $ for image analysis (saved %.2f $ via cache)" % (costs, saved))
+        logging.info("Spent %.4f $ for image analysis (saved %.4f $ via cache)" % (costs, saved))
 
     def run_jobs_parallel(
         self,
@@ -160,6 +160,8 @@ class autoPDFtagger:
         thr = int(config.get('AI', 'text_threshold_words', fallback='100'))
         image_model = config.get('AI', 'image_model', fallback='openai/gpt-5-nano')
         combined_model = config.get('AI', 'combined_model', fallback=image_model)
+        if do_combined and not (combined_model or "").strip():
+            logging.error("Combined analysis requested but no model configured. Set [AI].combined_model or [AI].image_model in your config.")
 
         for document in self.file_list.pdf_documents.values():
             abs_path = document.get_absolute_path()
@@ -211,6 +213,8 @@ class autoPDFtagger:
                     def _run():
                         try:
                             logging.info("[AI combined] %s", doc.file_name)
+                            if not (combined_model or "").strip():
+                                raise RuntimeError("No combined model configured (empty [AI].combined_model and [AI].image_model)")
                             response, usage = ai_tasks.analyze_combined(doc, combined_model, visual_debug_path=self._visual_debug_path)
                             self._log_ai_response("combined", doc, response, usage)
                             if response:
@@ -268,12 +272,12 @@ class autoPDFtagger:
             )
         if do_image:
             logging.info(
-                "Spent %.2f $ for image analysis (saved %.2f $ via cache)",
+                "Spent %.4f $ for image analysis (saved %.4f $ via cache)",
                 totals["image_spent"], totals["image_saved"],
             )
         if do_combined:
             logging.info(
-                "Spent %.2f $ for combined analysis (saved %.2f $ via cache)",
+                "Spent %.4f $ for combined analysis (saved %.4f $ via cache)",
                 totals["combined_spent"], totals["combined_saved"],
             )
 
