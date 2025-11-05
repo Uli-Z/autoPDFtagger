@@ -175,9 +175,9 @@ class JobManager:
                             )
 
                 status_lines = []
-                for idx, (short_label, full_label, metrics) in enumerate(active):
+                for _idx, (short_label, full_label, metrics) in enumerate(active):
                     status_lines.append(
-                        render_line(full_label, metrics, show_spinner=(idx == 0))
+                        render_line(full_label, metrics, show_spinner=True)
                     )
 
                 status_text = "\n".join(status_lines)
