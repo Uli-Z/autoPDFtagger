@@ -374,7 +374,47 @@ def run_vision(
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
 
-    logging.debug("LLM vision request: %s (parts=%d)", {k: v for k, v in kwargs.items() if k != "messages"}, len(content))
+    # Estimate prompt tokens for debug logging (best-effort)
+    def _tok_len(s: str) -> int:
+        try:
+            import tiktoken  # type: ignore
+            enc = tiktoken.get_encoding("cl100k_base")
+            return len(enc.encode(s or ""))
+        except Exception:
+            return max(1, len(s or "") // 4)
+
+    text_tokens = 0
+    image_count = 0
+    try:
+        for p in content:
+            if (p or {}).get("type") == "text":
+                text_tokens += _tok_len(str(p.get("text") or ""))
+            elif (p or {}).get("type") == "image_url":
+                image_count += 1
+    except Exception:
+        pass
+    # Optional per-image token estimate from config
+    per_img_est = None
+    try:
+        val = app_config.get("AI", "combined_tokens_per_image", fallback=None)
+        if val is not None and str(val).strip():
+            vi = int(val)
+            if vi > 0:
+                per_img_est = vi
+    except Exception:
+        pass
+    # Build a compact suffix for image estimate
+    img_suffix = ""
+    total_est = text_tokens
+    if isinstance(per_img_est, int):
+        img_est = per_img_est * image_count
+        total_est += img_est
+        img_suffix = f", img≈{img_est}"
+    logging.debug(
+        "LLM vision request: %s (parts=%d, est_prompt_tokens≈%d, text≈%d, images=%d%s)",
+        {k: v for k, v in kwargs.items() if k != "messages"},
+        len(content), total_est, text_tokens, image_count, img_suffix,
+    )
     # Capture any provider prints to keep our board intact
     _buf_out, _buf_err = io.StringIO(), io.StringIO()
     with redirect_stdout(_buf_out), redirect_stderr(_buf_err):

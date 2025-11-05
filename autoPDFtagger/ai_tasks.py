@@ -787,6 +787,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     intro_tokens = _tok_len(intro)
     page_tokens = [(_tok_len(t)) for _, t in text_parts]
     sum_text = intro_tokens + sum(page_tokens)
+    trimmed_happened = False
     if sum_text > token_limit:
         # Proportional trimming across pages only; keep intro intact
         budget = max(0, token_limit - intro_tokens)
@@ -801,6 +802,11 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             cut = int(len(t) * ratio)
             new_parts.append((p, t[:max(1, cut)]))
         text_parts = new_parts
+        trimmed_happened = True
+        logging.info(
+            "[combined budget] trimmed text to fit limit: used_tokens≈%d/%d",
+            intro_tokens + sum(_tok_len(t) for _, t in text_parts), token_limit,
+        )
 
     # Select images under remaining budget and following priority
     used_tokens = intro_tokens + sum(_tok_len(t) for _, t in text_parts)
@@ -825,6 +831,8 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
 
     selected_pages_full: set[int] = set()
     selected_images: set[int] = set()
+    image_tokens_spent = 0
+    skipped_due_budget = 0
 
     # Helper: estimate image token cost per OpenAI tiling guidance
     import math
@@ -858,16 +866,27 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     for c in ordered:
         c_tokens = _estimate_tokens_for_candidate(c)
         if remaining < c_tokens:
+            skipped_due_budget += 1
             continue
         if c.get("kind") == "page":
             selected_pages_full.add(int(c.get("page") or 0))
             remaining -= c_tokens
+            image_tokens_spent += c_tokens
         else:
             p = int(c.get("page") or 0)
             if p in selected_pages_full:
                 continue
             selected_images.add(int(c.get("id") or 0))
             remaining -= c_tokens
+            image_tokens_spent += c_tokens
+
+    if skipped_due_budget > 0:
+        logging.info(
+            "[combined budget] skipped images due to budget=%d; selected pages_full=%d, regions=%d; est_image_tokens≈%d; est_total≈%d/%d",
+            skipped_due_budget,
+            len(selected_pages_full), len(selected_images), image_tokens_spent,
+            used_tokens + image_tokens_spent, token_limit,
+        )
 
     # Build final parts in page order: intro, then for each page -> text then images
     parts.append({"type": "text", "text": intro})
