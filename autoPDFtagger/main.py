@@ -120,7 +120,7 @@ def main():
     # Trigger analyses when any AI flag is set; allow visual-debug to trigger image-analysis dry-run
     if args.ai_text_analysis or args.ai_image_analysis or bool(args.visual_debug):
         if is_output_option_set() or bool(args.visual_debug):
-            # -i triggers only image analysis (combined algorithm includes text inside request)
+            # -i triggers only image analysis (includes text inside the same request)
             # -t triggers a separate text job. When both are set, run both.
             do_image = bool(args.ai_image_analysis or args.visual_debug)
             do_text = bool(args.ai_text_analysis)
@@ -169,6 +169,10 @@ def main():
         else: # print to stdout
             output_json = archive.file_list.export_to_json()
             print(output_json)
+            try:
+                sys.stdout.flush()
+            except Exception:
+                pass
     # Save results to CSV-file if set
     if args.csv is not None:
         archive.file_list.export_to_csv_file(args.csv)

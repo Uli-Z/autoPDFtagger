@@ -296,160 +296,18 @@ def _select_images_for_analysis(doc: PDFDocument) -> List[ImageCandidate]:
     return []
 
 
-def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Dict[str, Any]]:
-    """Analyze images in the document with a vision-capable model.
-    Returns (json_str, usage). If model is empty or unsupported, skip.
+def analyze_images(doc: PDFDocument, model: str = "", visual_debug_path: Optional[str] = None) -> Tuple[Optional[str], Dict[str, Any]]:
+    """Analyze a document using the image-analysis algorithm (text + images in one request).
+
+    Delegates to the unified image pipeline that preserves page reading order and
+    applies the per-file token budget across text and images. When visual_debug_path
+    is provided, writes a PDF illustrating the sequence and skips the API call.
     """
-    if not model:
-        logging.info("Image analysis skipped (no model configured)")
-        return None, {"cost": 0.0}
-
-    # Allow deterministic test runs using mock files next to the PDF
-    if mock_provider.is_mock_model(model):
-        response, usage = mock_provider.fetch(doc, "image", context=None)
-        return response, usage
-
-    # Build candidate list with scoring and then render b64 + context in order
-    cands = _select_images_for_analysis(doc)
-    if not cands:
-        logging.info("No images selected for analysis; skipping")
-        return None, {"cost": 0.0}
-
-    if mock_provider.is_mock_model(model):
-        response, usage = mock_provider.fetch(doc, "image", context={"image_count": len(cands)})
-        # Attempt to inject alt-texts based on mock response structure
-        try:
-            items = json.loads(response)
-            if isinstance(items, dict):
-                items = [items]
-            if isinstance(items, list):
-                alts = []
-                for i, item in enumerate(items[: len(cands)]):
-                    title = (item or {}).get("title") or ""
-                    summary = (item or {}).get("summary") or ""
-                    alt_text = (item or {}).get("alt_text") or (f"{title}. {summary}" if (title or summary) else "")
-                    if alt_text:
-                        alts.append((cands[i].page_index, alt_text))
-                if alts:
-                    try:
-                        # Inject synthesized alt-texts into document text for follow-up text analysis
-                        doc.inject_image_alt_texts(alts)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        return response, usage
-
-    # Config for rendering + context length
-    try:
-        page_render_max_px = int(config.get('AI', 'page_render_max_px', fallback='1536'))
-    except Exception:
-        page_render_max_px = 1536
-    try:
-        image_render_max_px = int(config.get('AI', 'image_render_max_px', fallback=str(page_render_max_px)))
-    except Exception:
-        image_render_max_px = page_render_max_px
-    try:
-        context_max_chars = int(config.get('AI', 'image_context_max_chars', fallback='800'))
-    except Exception:
-        context_max_chars = 800
-
-    def _truncate(text: str, n: int) -> str:
-        text = (text or "").strip()
-        return text if len(text) <= n else (text[:n] + "…")
-
-    # Render images in the same order as candidates and attach page text context
-    images_b64: List[str] = []
-    per_image_context: List[str] = []
-    used_pages: List[int] = []
-    for idx, c in enumerate(cands, start=1):
-        page_text = doc.get_page_text(c.page_index, use_ocr_if_needed=True)
-        per_image_context.append(
-            f"Image {idx} (page {c.page_index + 1}; kind={c.kind}; score={c.score:.3f})\n" +
-            f"Context (trimmed): {_truncate(page_text, context_max_chars)}"
-        )
-        if c.kind == "xref" and c.xref:
-            b64 = doc.render_image_region_png_base64(c.xref, max_px=image_render_max_px)
-            if not b64:
-                # Fallback to raw xref extract if region render failed
-                b64 = doc.get_png_image_base64_by_xref(c.xref)
-        else:
-            b64 = doc.render_page_png_base64(c.page_index, max_px=page_render_max_px)
-        if b64:
-            images_b64.append(b64)
-            used_pages.append(c.page_index)
-
-    if not images_b64:
-        logging.info("Rendering failed for selected images; skipping")
-        return None, {"cost": 0.0}
-
-    # Minimal, user-oriented log: how many images from which pages
-    page_counts: Dict[int, int] = {}
-    for p in used_pages:
-        page_counts[p + 1] = page_counts.get(p + 1, 0) + 1
-    summary = ", ".join(f"page {p}: {n}" for p, n in sorted(page_counts.items()))
-    logging.info("Image selection summary — %s", summary if summary else "no images")
-
-    # Build an informative prompt that lists each image with its page-local context
-    prompt = (
-        "You are a helpful assistant analyzing images inside of documents."
-        " For each image, produce an object with these fields:"
-        " title (3-4 words), summary (3-4 sentences), creator/issuer, creation_date (if any),"
-        " tags (list), importance (0-10), per-field confidences (0-10), and alt_text."
-        " The alt_text must explicitly include the image Title and Summary in one or two sentences,"
-        " suitable for an HTML alt attribute, and must not include tags or confidence values."
-        " It should reflect both the visual content and the page-local text context. "
-        f"Always answer in {_lang()}. Output must be a JSON array, one object per image,"
-        " in the same order as the uploaded images."
-        "\n\nDocument context (existing, to be extended consistently):\n" + doc.to_api_json() +
-        "\n\nPer-image page context follows in the same order as the uploaded images:\n" +
-        "\n\n".join(per_image_context)
-    )
-
-    try:
-        # Optional temperature override via config
-        try:
-            temp_str = config.get('AI', 'image_temperature', fallback='0.8')
-            temperature = float(temp_str)
-        except Exception:
-            temperature = 0.8
-        answer, usage = run_vision(model, prompt, images_b64, temperature=temperature)
-        text = _json_guard2(answer)
-        # Normalize confidences in per-image objects if the model used 0..1
-        try:
-            obj = json.loads(text)
-            obj = _normalize2(obj, source="image")
-            text = json.dumps(obj, ensure_ascii=False)
-        except Exception:
-            pass
-        # Try to extract per-image alt texts and inject into the document's text buffer
-        try:
-            data = json.loads(text)
-            if isinstance(data, dict):
-                data = [data]
-            if isinstance(data, list):
-                alts = []
-                for i, item in enumerate(data[: len(used_pages)]):
-                    title = (item or {}).get("title") or ""
-                    summary = (item or {}).get("summary") or ""
-                    alt_text = (item or {}).get("alt_text") or (f"{title}. {summary}" if (title or summary) else "")
-                    if alt_text:
-                        alts.append((used_pages[i], alt_text))
-                if alts:
-                    try:
-                        doc.inject_image_alt_texts(alts)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        return text, usage
-    except Exception as e:
-        logging.warning(f"Vision model error or unsupported: {e}")
-        return None, {"cost": 0.0}
+    return analyze_combined(doc, model=model, visual_debug_path=visual_debug_path)
 
 
 def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optional[str] = None) -> Tuple[Optional[str], Dict[str, Any]]:
-    """Image analysis using the combined (text + images) algorithm.
+    """Image analysis (text + images in one request).
 
     Returns (json_str, usage). When visual_debug_path is provided, performs a dry-run:
     generates a PDF illustrating the request (parts order) and skips real AI calls.
@@ -462,7 +320,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
 
     # Optional: allow using mock provider for deterministic tests
     if mock_provider.is_mock_model(model):
-        response, usage = mock_provider.fetch(doc, "combined", context={})
+        response, usage = mock_provider.fetch(doc, "image", context={})
         return response, usage
 
     # Read knobs from config
@@ -561,7 +419,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             from pdfminer.high_level import extract_pages  # type: ignore
             from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTImage, LTFigure  # type: ignore
         except Exception as e:
-            logging.error("pdfminer.six is required for image analysis (combined algorithm): %s", e)
+            logging.error("pdfminer.six is required for image analysis: %s", e)
             return [], [], page_texts
 
         try:
@@ -1167,7 +1025,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             pass
         return text, usage
     except Exception as e:
-        logging.warning(f"Image analysis (combined algorithm) failed: {e}")
+        logging.warning(f"Image analysis failed: {e}")
         return None, {"cost": 0.0}
 
 
@@ -1197,7 +1055,7 @@ def _write_visual_debug_pdf(output_path: str, doc: PDFDocument, prompt: str, per
 
     # Page 1..N: Prompt and per-page text summary
     per_page_text = "\n\n".join(per_page_blocks)
-    add_text_pages("Combined Prompt", prompt + "\n\n---\n\nPer-page text blocks (as sent):\n\n" + per_page_text)
+    add_text_pages("Image Analysis Prompt", prompt + "\n\n---\n\nPer-page text blocks (as sent):\n\n" + per_page_text)
 
     # Manifest page
     manifest_text = "\n".join(manifest_lines) if manifest_lines else "(no images)"

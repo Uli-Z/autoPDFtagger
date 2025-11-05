@@ -6,7 +6,8 @@ import threading
 class _BoardState:
     def __init__(self, stream):
         self.stream = stream
-        self.lock = threading.Lock()
+        # Use RLock so suspend/resume can hold the lock across emit safely
+        self.lock = threading.RLock()
         self.enabled = bool(getattr(stream, "isatty", lambda: False)())
         self.current = ""
         self._lines = []
@@ -50,17 +51,37 @@ class _BoardState:
             self._lines = lines
 
     def suspend(self) -> bool:
+        """Prepare to print a log line without breaking the board.
+
+        Acquires the internal lock and clears the board, keeping the lock
+        held so that concurrent updates cannot interleave output.
+        Returns True iff suspension took effect and the caller must call resume().
+        """
         if not self.enabled or not self._lines:
             return False
-        with self.lock:
+        # Hold the lock across the entire emit/resume sequence
+        self.lock.acquire()
+        try:
             self._clear_previous()
+        except Exception:
+            # In case of unexpected stream issues, release the lock and disable
+            self.lock.release()
+            return False
         return True
 
     def resume(self) -> None:
         if not self.enabled or not self._lines:
             return
-        with self.lock:
+        try:
+            # Lock is already held by suspend(); RLock allows re-entrancy
             self._render(self._lines)
+        finally:
+            # Always release to avoid deadlocks
+            try:
+                self.lock.release()
+            except RuntimeError:
+                # Lock may not be held if suspend() failed midway
+                pass
 
     def clear(self) -> None:
         if not self.enabled or not self._lines:

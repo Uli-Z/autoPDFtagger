@@ -96,8 +96,9 @@ class autoPDFtagger:
         model = config.get('AI', 'image_model', fallback='openai/gpt-5-nano')
         for document in self.file_list.pdf_documents.values():
             logging.info("... " + document.file_name)
-            # Use legacy analyze_images API (may internally delegate). This keeps tests/back-compat.
-            response, usage = ai_tasks.analyze_images(document, model)
+            # Image analysis uses text+images in one request.
+            # Visual debug triggers a dry-run illustration if configured.
+            response, usage = ai_tasks.analyze_images(document, model, visual_debug_path=self._visual_debug_path)
             self._log_ai_response("image", document, response, usage)
             # Only set metadata if response is a single JSON object
             try:
@@ -161,7 +162,7 @@ class autoPDFtagger:
         ml = config.get('AI', 'text_model_long', fallback='openai/gpt-5-nano')
         thr = int(config.get('AI', 'text_threshold_words', fallback='100'))
         image_model = config.get('AI', 'image_model', fallback='openai/gpt-5-nano')
-        # Combined mode removed; image analysis uses the combined (text+images) algorithm
+        # Image analysis runs a single request that includes text + images
 
         for document in self.file_list.pdf_documents.values():
             abs_path = document.get_absolute_path()
@@ -177,13 +178,13 @@ class autoPDFtagger:
                     return _run
                 jm.add_job(Job(id=ocr_id, kind="ocr", run=_make_ocr()))
 
-            # Add image job (legacy API); keeps compatibility with tests/fixtures
+            # Add image job using the image analysis (text+images) algorithm
             if do_image:
                 def _make_img(doc=document):
                     def _run():
                         try:
                             logging.info("[AI image] %s", doc.file_name)
-                            response, usage = ai_tasks.analyze_images(doc, image_model)
+                            response, usage = ai_tasks.analyze_images(doc, image_model, visual_debug_path=self._visual_debug_path)
                             self._log_ai_response("image", doc, response, usage)
                             # Backward-compatibility: update only if response is a single object
                             try:

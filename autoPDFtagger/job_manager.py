@@ -22,7 +22,7 @@ class Job:
 class JobManager:
     """Lightweight job manager with per-queue concurrency and simple dependencies.
 
-    - Maintains three queues: OCR, AI (combined text+image), and optional per-kind splitting later.
+    - Maintains three queues: OCR, AI, and optional per-kind splitting later.
     - Enforces dependencies by waiting for dependency futures before submitting work.
     - Emits periodic status summaries to the log.
     """

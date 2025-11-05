@@ -102,9 +102,9 @@ Both text and image analysis share a single per-file input token limit:
 - If a text prompt would exceed the limit, only the user content is trimmed proportionally; the system instructions stay intact. An INFO log is emitted when trimming occurs or when the intro alone exceeds the limit (request aborted).
 - For image analysis, see below for how trimming/skipping works with page texts and images under the same limit.
 
-### Image Analysis Strategy (Combined Algorithm)
+### Image Analysis Strategy
 
-The image analysis (`-i`) now uses a combined algorithm that interleaves text and images in a single request to the vision model. You do not need `-t` together with `-i` — `-i` already includes page texts.
+Image analysis (`-i`) interleaves page text and images in a single request to the vision model. You do not need `-t` together with `-i` — `-i` already includes page texts.
 
 - Reading order preserved: for each page, the prompt includes the page’s text followed by selected images from that page.
 - Token budget aware: uses the shared `[AI].token_limit` (default 1,000,000 input tokens). If the page texts exceed the limit, the tool proportionally trims page texts (intro/system stays intact) and logs an INFO when trimming occurs. Images are then added until the remaining budget is exhausted. INFO logs also appear when some images are skipped due to the budget.
