@@ -2,10 +2,10 @@
 
 ## What's New in 0.3 (2025)
 
-- Image analysis is simpler: `-i` now includes the relevant page text; combining `-t` with `-i` is no longer needed.
-- Better results on scans and slide decks: improved titles, summaries, and tags.
-- Faster and cheaper runs: fewer requests and clearer progress.
-- Predictable token limit per file via `[AI].token_limit`; trims less important content first and may skip low‑signal images when needed.
+ - Simpler usage: `-i` now also analyzes the relevant page text. Using `-t` together with `-i` is no longer necessary. Existing `-ti` calls still work (redundant).
+ - Faster and cheaper runs: fewer model requests and a smoother live status board.
+- Predictable per‑file token limit via `[AI].token_limit` (default 1,000,000). If the limit is reached, the tool trims lower‑value context first and may skip low‑signal images; INFO logs indicate when this happens.
+- No config changes required: current setups continue to work. Tip: adjust `[AI].token_limit` to trade quality vs. speed/cost.
 
 Includes improvements from 0.2:
 - OCR (Tesseract) for scan/low‑text PDFs.
