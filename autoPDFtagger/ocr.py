@@ -56,7 +56,7 @@ class TesseractRunner:
                 if cached and isinstance(cached, dict):
                     text = cached.get("text", "")
                     if text:
-                        logging.info("OCR cache hit (dpi=%s, langs=%s)", self.dpi, self.languages)
+                        logging.debug("OCR cache hit (dpi=%s, langs=%s)", self.dpi, self.languages)
                         return text
             except Exception:
                 pass

@@ -20,8 +20,7 @@ def main():
     parser.add_argument("-d", "--debug", help="Debug level (0: no debug, 1: basic debug, 2: detailed debug)", type=int, choices=[0, 1, 2], default=1)
     parser.add_argument("-f", "--file-analysis", help="Try to conventionally extract metadata from file, file name and folder structure", action="store_true")   
     parser.add_argument("-t", "--ai-text-analysis", help="Do an AI text analysis", action="store_true")     
-    parser.add_argument("-i", "--ai-image-analysis", help="Do an AI image analysis", action="store_true")
-    parser.add_argument("-m", "--ai-combined-analysis", help="Do a combined AI analysis (text + images in one request)", action="store_true")
+    parser.add_argument("-i", "--ai-image-analysis", help="Do an AI image analysis (now includes text + images in one request)", action="store_true")
     parser.add_argument("-c", "--ai-tag-analysis", help="Do an AI tag analysis", action="store_true")
     parser.add_argument("-e", "--export", help="Copy Documents to a target folder", nargs='?', default=None, const=None)
     parser.add_argument("-l", "--list", help="List documents stored in database", action="store_true")
@@ -32,7 +31,7 @@ def main():
     parser.add_argument("--no-ocr", dest="ocr", action="store_false", help="Force-disable OCR regardless of configuration")
     parser.add_argument("--ocr-languages", help="Override Tesseract language codes (e.g. 'deu+eng')")
     parser.add_argument("--debug-ai-log", help="Append raw AI JSON responses to the given log file", default=None)
-    parser.add_argument("--visual-debug", help="Write a PDF illustrating the combined request (prompt + image order)", default=None)
+    parser.add_argument("--visual-debug", help="Write a PDF illustrating the image-analysis request (prompt + image order)", default=None)
     parser.add_argument("--no-cache", action="store_true", help="Disable on-disk cache for OCR and AI calls")
     parser.set_defaults(ocr=None)
 
@@ -118,19 +117,17 @@ def main():
         return args.export is not None or hasattr(args, "json") or args.csv is not None
 
     # Parallel job execution for AI + OCR based on configuration
-    # Trigger analyses when any AI flag is set; allow visual-debug to trigger combined dry-run
-    if args.ai_text_analysis or args.ai_image_analysis or args.ai_combined_analysis or bool(args.visual_debug):
+    # Trigger analyses when any AI flag is set; allow visual-debug to trigger image-analysis dry-run
+    if args.ai_text_analysis or args.ai_image_analysis or bool(args.visual_debug):
         if is_output_option_set() or bool(args.visual_debug):
-            # If image analysis is requested, follow up with text analysis automatically
-            do_combined = bool(args.ai_combined_analysis or args.visual_debug)
-            do_image = bool(args.ai_image_analysis and not do_combined)
-            do_text = bool((args.ai_text_analysis or args.ai_image_analysis) and not do_combined)
-            # Enable OCR when any text analysis is planned and an OCR runner is available
-            enable_ocr = bool(ocr_setup.runner) and (do_text or do_combined)
+            # New behavior: image analysis (-i) already includes text; -t is redundant when -i/--visual-debug is set
+            do_image = bool(args.ai_image_analysis or args.visual_debug)
+            do_text = bool(args.ai_text_analysis and not do_image)
+            # Enable OCR when either text or image analysis is planned and an OCR runner is available
+            enable_ocr = bool(ocr_setup.runner) and (do_text or do_image)
             archive.run_jobs_parallel(
                 do_text=do_text,
                 do_image=do_image,
-                do_combined=do_combined,
                 enable_ocr=enable_ocr,
             )
         else:

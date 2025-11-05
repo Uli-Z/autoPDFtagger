@@ -161,6 +161,53 @@ def analyze_text(
         {"role": "user", "content": user},
     ]
 
+    # Apply a per-file token limit shared across analyses
+    try:
+        token_limit = int(config.get('AI', 'token_limit', fallback=str(1_000_000)))
+    except Exception:
+        token_limit = 1_000_000
+
+    # Rough token estimator (tiktoken if available, else len/4)
+    try:
+        import tiktoken  # type: ignore
+        enc = tiktoken.get_encoding("cl100k_base")
+        def _tok_len(s: str) -> int:
+            try:
+                return len(enc.encode(s or ""))
+            except Exception:
+                return max(1, len(s or "") // 4)
+    except Exception:
+        def _tok_len(s: str) -> int:
+            return max(1, len(s or "") // 4)
+
+    intro_tokens = _tok_len(system)
+    user_tokens = _tok_len(user)
+    total_tokens_est = intro_tokens + user_tokens
+    if intro_tokens > token_limit:
+        logging.info(
+            "[text budget] %s: intro exceeds limit (intro≈%d > limit=%d); aborting request",
+            doc.file_name, intro_tokens, token_limit,
+        )
+        return None, {"cost": 0.0, "dry_run": True, "skipped_reason": "intro_exceeds_limit"}
+    if total_tokens_est > token_limit:
+        # Trim user content proportionally; keep system intact
+        budget = max(0, token_limit - intro_tokens)
+        if user_tokens > 0 and budget < user_tokens:
+            ratio = budget / max(1, user_tokens)
+            cut = int(len(user) * ratio)
+            user = user[: max(1, cut)]
+            messages[1]["content"] = user
+        logging.info(
+            "[text budget] %s: trimmed text to fit limit (used_tokens≈%d/%d)",
+            doc.file_name, intro_tokens + _tok_len(user), token_limit,
+        )
+    # Pre-call debug summary
+    try:
+        used = intro_tokens + _tok_len(user)
+        logging.debug("[text request] tokens: total≈%d/%d", used, token_limit)
+    except Exception:
+        pass
+
     try:
         text_temperature = float(config.get("AI", "text_temperature", fallback="0.3"))
     except Exception:
@@ -502,28 +549,15 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
 
 
 def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optional[str] = None) -> Tuple[Optional[str], Dict[str, Any]]:
-    """Analyze the full document by sending all text and all images together.
+    """Image analysis using the combined (text + images) algorithm.
 
-    Returns (json_str, usage).
-    When visual_debug_path is provided, performs a dry-run: generates the
-    illustrative PDF only and skips any real AI requests.
-    Best-effort preserves the reading order: page-by-page text, and images
-    appended in the same sequence as they appear within each page.
+    Returns (json_str, usage). When visual_debug_path is provided, performs a dry-run:
+    generates a PDF illustrating the request (parts order) and skips real AI calls.
+    Reading order is preserved page-by-page: text then images per page.
     """
     dry_run = visual_debug_path is not None or not model
     if not model and not visual_debug_path:
-        try:
-            cm = (config.get('AI', 'combined_model', fallback='') or '').strip()
-        except Exception:
-            cm = ''
-        try:
-            im = (config.get('AI', 'image_model', fallback='') or '').strip()
-        except Exception:
-            im = ''
-        logging.error(
-            "Combined analysis skipped: no model configured (combined_model='%s', image_model='%s'). "
-            "Set one of them in your config.", cm or '(empty)', im or '(empty)'
-        )
+        logging.error("Image analysis skipped: no model configured ([AI].image_model is empty)")
         return None, {"cost": 0.0}
 
     # Optional: allow using mock provider for deterministic tests
@@ -534,24 +568,32 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     # Read knobs from config
     try:
         # No truncation by default; 0 disables trimming
-        context_max_chars = int(config.get('AI', 'combined_text_max_chars', fallback='0'))
+        # Prefer new key image_text_max_chars; fallback to combined_text_max_chars
+        context_max_chars = int(
+            config.get('AI', 'image_text_max_chars', fallback=config.get('AI', 'combined_text_max_chars', fallback='0'))
+        )
     except Exception:
         context_max_chars = 0
     # Token + image selection knobs
     try:
-        token_limit = int(config.get('AI', 'combined_token_limit', fallback=str(1_000_000)))
+        token_limit = int(config.get('AI', 'token_limit', fallback=str(1_000_000)))
     except Exception:
         token_limit = 1_000_000
+    # tokens_per_image kept only for backward compatibility (no longer used)
     try:
         tokens_per_image = int(config.get('AI', 'combined_tokens_per_image', fallback='0'))
     except Exception:
         tokens_per_image = 0
     try:
-        priority_first_pages = int(config.get('AI', 'combined_priority_first_pages', fallback='3'))
+        priority_first_pages = int(
+            config.get('AI', 'image_priority_first_pages', fallback=config.get('AI', 'combined_priority_first_pages', fallback='3'))
+        )
     except Exception:
         priority_first_pages = 3
     try:
-        page_group_threshold = int(config.get('AI', 'combined_page_group_threshold', fallback='3'))
+        page_group_threshold = int(
+            config.get('AI', 'image_page_group_threshold', fallback=config.get('AI', 'combined_page_group_threshold', fallback='3'))
+        )
     except Exception:
         page_group_threshold = 3
     try:
@@ -562,10 +604,16 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         page_render_max_px = int(config.get('AI', 'page_render_max_px', fallback=str(image_render_max_px)))
     except Exception:
         page_render_max_px = image_render_max_px
-    exclude_small = _cfg_bool('AI', 'combined_exclude_small_icons', fallback='true')
+    # Prefer new key; fallback to old combined key
     try:
-        # For combined mode selection rules, ignore images with min edge < 3cm by default
-        min_icon_edge_cm = float(config.get('AI', 'combined_small_image_min_edge_cm', fallback='3.0'))
+        exclude_small = _cfg_bool('AI', 'image_exclude_small_icons', fallback=config.get('AI', 'combined_exclude_small_icons', fallback='true'))
+    except Exception:
+        exclude_small = True
+    try:
+        # Ignore images with min edge < 3cm by default (new key, fallback to old)
+        min_icon_edge_cm = float(
+            config.get('AI', 'image_small_image_min_edge_cm', fallback=config.get('AI', 'combined_small_image_min_edge_cm', fallback='3.0'))
+        )
     except Exception:
         min_icon_edge_cm = 3.0
 
@@ -675,14 +723,14 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         return {"words": words, "images": imgs, "shapes": shapes}
 
     try:
-        max_words_in_figure = int(config.get('AI', 'combined_figure_max_words', fallback='20'))
+        max_words_in_figure = int(config.get('AI', 'image_figure_max_words', fallback=config.get('AI', 'combined_figure_max_words', fallback='20')))
     except Exception:
         max_words_in_figure = 20
     try:
-        min_shapes_in_figure = int(config.get('AI', 'combined_figure_min_shapes', fallback='2'))
+        min_shapes_in_figure = int(config.get('AI', 'image_figure_min_shapes', fallback=config.get('AI', 'combined_figure_min_shapes', fallback='2')))
     except Exception:
         min_shapes_in_figure = 2
-    capture_figures = _cfg_bool('AI', 'combined_capture_figures', fallback='true')
+    capture_figures = _cfg_bool('AI', 'image_capture_figures', fallback=config.get('AI', 'combined_capture_figures', fallback='true'))
 
     total_visuals = 0
     # Collect image/figure candidates without rendering to allow selection under budget
@@ -787,8 +835,8 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     # Hard guard: if the intro (system prompt + context) alone exceeds the limit, abort cleanly
     if intro_tokens > token_limit:
         logging.info(
-            "[combined budget] intro exceeds limit: intro≈%d > limit=%d; aborting request",
-            intro_tokens, token_limit,
+            "[image budget] %s: intro exceeds limit (intro≈%d > limit=%d); aborting request",
+            doc.file_name, intro_tokens, token_limit,
         )
         return None, {"cost": 0.0, "dry_run": True, "skipped_reason": "intro_exceeds_limit"}
     trimmed_happened = False
@@ -808,7 +856,8 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         text_parts = new_parts
         trimmed_happened = True
         logging.info(
-            "[combined budget] trimmed text to fit limit: used_tokens≈%d/%d",
+            "[image budget] %s: trimmed text to fit limit (used_tokens≈%d/%d)",
+            doc.file_name,
             intro_tokens + sum(_tok_len(t) for _, t in text_parts), token_limit,
         )
 
@@ -879,7 +928,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         if remaining < c_tokens:
             skipped_due_budget += 1
             logging.debug(
-                "[combined budget] skip %s p=%d need≈%d > remaining≈%d",
+                "[image budget] skip %s p=%d need≈%d > remaining≈%d",
                 c_kind, c_page, c_tokens, before,
             )
             continue
@@ -888,14 +937,14 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             remaining -= c_tokens
             image_tokens_spent += c_tokens
             logging.debug(
-                "[combined budget] take page p=%d cost≈%d → remaining≈%d",
+                "[image budget] take page p=%d cost≈%d → remaining≈%d",
                 c_page, c_tokens, remaining,
             )
         else:
             # region/image candidate
             if c_page in selected_pages_full:
                 logging.debug(
-                    "[combined budget] skip region on p=%d (full page already selected)",
+                    "[image budget] skip region on p=%d (full page already selected)",
                     c_page,
                 )
                 continue
@@ -904,13 +953,14 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             remaining -= c_tokens
             image_tokens_spent += c_tokens
             logging.debug(
-                "[combined budget] take region id=%d p=%d cost≈%d → remaining≈%d",
+                "[image budget] take region id=%d p=%d cost≈%d → remaining≈%d",
                 img_id, c_page, c_tokens, remaining,
             )
 
     if skipped_due_budget > 0:
         logging.info(
-            "[combined budget] skipped images due to budget=%d; selected pages_full=%d, regions=%d; est_image_tokens≈%d; est_total≈%d/%d",
+            "[image budget] %s: skipped images due to budget=%d; selected pages_full=%d, regions=%d; est_image_tokens≈%d; est_total≈%d/%d",
+            doc.file_name,
             skipped_due_budget,
             len(selected_pages_full), len(selected_images), image_tokens_spent,
             used_tokens + image_tokens_spent, token_limit,
@@ -938,7 +988,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
                 original_tokens = -1
             try:
                 logging.info(
-                    "[combined budget] no images selected; applying adaptive fallback (remaining≈%d). Best candidate: kind=%s p=%d original≈%s tokens",
+                    "[image budget] no images selected; applying adaptive fallback (remaining≈%d). Best candidate: kind=%s p=%d original≈%s tokens",
                     remaining, str(best.get("kind")), int(best.get("page") or 0), ("%d" % original_tokens if original_tokens >= 0 else "unknown")
                 )
             except Exception:
@@ -965,7 +1015,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
                     image_tokens_spent += chosen_tokens
                     remaining = max(0, remaining - chosen_tokens)
                     logging.info(
-                        "[combined budget] adaptive include: page p=%d — downscaled to ~%dpx (tiles≈%d, ≈%d tokens)",
+                        "[image budget] adaptive include: page p=%d — downscaled to ~%dpx (tiles≈%d, ≈%d tokens)",
                         pno, px, chosen_tiles, chosen_tokens,
                     )
                 else:
@@ -986,14 +1036,14 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
                     image_tokens_spent += chosen_tokens
                     remaining = max(0, remaining - chosen_tokens)
                     logging.info(
-                        "[combined budget] adaptive include: region id=%d p=%d — downscaled to ~%dpx (tiles≈%d, ≈%d tokens)",
+                        "[image budget] adaptive include: region id=%d p=%d — downscaled to ~%dpx (tiles≈%d, ≈%d tokens)",
                         img_id, pno, px, chosen_tiles, chosen_tokens,
                     )
             except Exception as _e:
-                logging.debug("[combined budget] adaptive include failed: %s", _e)
+                logging.debug("[image budget] adaptive include failed: %s", _e)
         else:
             logging.info(
-                "[combined budget] no images selected and adaptive fallback not possible (remaining≈%d < ~255 tokens for 1 tile)",
+                "[image budget] no images selected and adaptive fallback not possible (remaining≈%d < ~255 tokens for 1 tile)",
                 remaining,
             )
 
@@ -1030,7 +1080,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
                 ("T" if p.get("type") == "text" else ("I" if p.get("type") == "image_url" else p.get("type", "?")))
                 for p in parts[:30]
             ])
-            logging.info("[combined visual-debug] part sequence (first 30): %s", seq)
+            logging.info("[image visual-debug] part sequence (first 30): %s", seq)
             _write_visual_debug_pdf_from_parts(
                 visual_debug_path,
                 doc,
@@ -1044,7 +1094,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     # Pre-call summary log including token estimates
     try:
         logging.debug(
-            "[combined request] tokens: text≈%d, images≈%d, total≈%d/%d (parts=%d)",
+            "[image request] tokens: text≈%d, images≈%d, total≈%d/%d (parts=%d)",
             used_tokens, image_tokens_spent, used_tokens + image_tokens_spent, token_limit, len(parts)
         )
     except Exception:
@@ -1053,12 +1103,12 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
     if dry_run:
         # Skip any actual AI request when visual-debug is active (or model missing)
         reason = "visual_debug" if visual_debug_path else "no_model"
-        logging.info("[combined] Skipping API call (reason=%s)", reason)
+        logging.info("[image] Skipping API call (reason=%s)", reason)
         return None, {"cost": 0.0, "dry_run": True, "skipped_reason": reason}
 
     try:
         try:
-            temp_str = config.get('AI', 'combined_temperature', fallback='1')
+            temp_str = config.get('AI', 'image_temperature', fallback=config.get('AI', 'combined_temperature', fallback='1'))
             temperature = float(temp_str)
         except Exception:
             temperature = 1.0
@@ -1067,13 +1117,13 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         # Normalize confidences to 0..10 if needed
         try:
             obj = json.loads(text)
-            obj = _normalize_confidence_numbers(obj, source="combined")
+            obj = _normalize_confidence_numbers(obj, source="image")
             text = json.dumps(obj, ensure_ascii=False)
         except Exception:
             pass
         return text, usage
     except Exception as e:
-        logging.warning(f"Combined analysis failed: {e}")
+        logging.warning(f"Image analysis (combined algorithm) failed: {e}")
         return None, {"cost": 0.0}
 
 
@@ -1158,7 +1208,7 @@ def _write_visual_debug_pdf_from_parts(output_path: str, doc: PDFDocument, parts
         f"File: {doc.file_name}",
         f"Parts: {len(parts)} (mixed text+images in send order)",
         "",
-        "This PDF illustrates the exact combined request order.",
+        "This PDF illustrates the exact image-analysis request order.",
         "Each subsequent page shows one part (text or image).",
     ]
     cover.insert_textbox(rect, "\n".join(text), fontsize=12, fontname="helv")

@@ -83,11 +83,26 @@ Default models (if values are missing) are:
 - Long text: `openai/gpt-5-nano`
 - Images: `openai/gpt-5-nano`
 
-### Image Analysis Strategy
+### Token Limit Per File
 
-- Not all images are analyzed to control time and cost; a configurable N limits analyses per PDF.
-- First pages have higher priority. Afterwards, images on pages with little (OCR) text are favored.
-- If a page has little text, OCR runs first so the vision model gets page‑local wording. Small icon clusters can be replaced by a page render; full‑page scans remain standalone.
+Both text and image analysis share a single per-file input token limit:
+- Configure `[AI].token_limit` (default 1,000,000).
+- If a text prompt would exceed the limit, only the user content is trimmed proportionally; the system instructions stay intact. An INFO log is emitted when trimming occurs or when the intro alone exceeds the limit (request aborted).
+- For image analysis, see below for how trimming/skipping works with page texts and images under the same limit.
+
+### Image Analysis Strategy (Combined Algorithm)
+
+The image analysis (`-i`) now uses a combined algorithm that interleaves text and images in a single request to the vision model. You do not need `-t` together with `-i` — `-i` already includes page texts.
+
+- Reading order preserved: for each page, the prompt includes the page’s text followed by selected images from that page.
+- Token budget aware: uses the shared `[AI].token_limit` (default 1,000,000 input tokens). If the page texts exceed the limit, the tool proportionally trims page texts (intro/system stays intact) and logs an INFO when trimming occurs. Images are then added until the remaining budget is exhausted. INFO logs also appear when some images are skipped due to the budget.
+- Image selection priorities:
+  - First pages first (`image_priority_first_pages`, default 3)
+  - Then by size (larger area first)
+  - Ignore tiny icons below a minimum edge (`image_small_image_min_edge_cm`, default 3.0 cm)
+  - If a page has many small images (≥ `image_page_group_threshold`), render the full page instead of each region.
+- Adaptive fallback: if no image fits the budget, the tool downscales the best candidate (page or region) to fit at least one 512×512 tile (≈255 tokens). INFO logs explain the decision.
+- Visual debug: `--visual-debug out.pdf` writes a PDF illustrating the exact sequence of parts (text/image) and performs a dry‑run (no API request). Useful to verify ordering and selected images.
 
 ### Caching & Costs
 
@@ -119,6 +134,7 @@ autoPDFtagger allfiles.json --ai-text-analysis --json textanalysis.json
 Run AI image analysis for low‑quality entries and merge:
 ```shell
 autoPDFtagger textanalysis.json --keep-below --ai-image-analysis --json imageanalysis.json
+# Note: -i already includes text; -ti is redundant.
 ```
 
 Normalize tags across the database with AI:

@@ -500,7 +500,9 @@ class PDFDocument:
             if text.strip():
                 return self._clean_text(text)
             if use_ocr_if_needed and self._ocr_runner is not None:
-                logging.info("[Page OCR] %s (page %d)", self.file_name, page_index + 1)
+                # Use OCR to obtain page text when no text layer is present.
+                # This may hit the OCR cache (see TesseractRunner logs).
+                logging.debug("[Page OCR] Using OCR for %s (page %d)", self.file_name, page_index + 1)
                 ocr_text = self._ocr_runner.extract_text_from_page(page) or ""
                 return self._clean_text(ocr_text)
             return ""
