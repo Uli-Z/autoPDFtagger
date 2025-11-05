@@ -19,6 +19,56 @@ def _lang() -> str:
 def _json_guard(text: str) -> str:
     if not text:
         return "{}"
+
+
+def _normalize_confidence_numbers(data: Any) -> Any:
+    """Normalize confidence scales to 0..10 when models return 0..1.
+
+    - If an object has only confidence values <= 1.0, scale all its *_confidence fields
+      (and tags_confidence list) by 10 and round to nearest int, clamped to [0, 10].
+    - Works for a dict or a list of dicts.
+    """
+    def _clamp(x: float) -> int:
+        try:
+            v = int(round(float(x) * 10.0))
+            return max(0, min(10, v))
+        except Exception:
+            return 0
+
+    def _process_obj(obj: Dict[str, Any]) -> Dict[str, Any]:
+        # Collect all confidence-like values
+        vals: list[float] = []
+        for k, v in obj.items():
+            if k.endswith("_confidence") and isinstance(v, (int, float)):
+                vals.append(float(v))
+        tc = obj.get("tags_confidence")
+        if isinstance(tc, list):
+            for v in tc:
+                if isinstance(v, (int, float)):
+                    vals.append(float(v))
+        if not vals:
+            return obj
+        if max(vals) <= 1.0:
+            # Scale all *_confidence and tags_confidence
+            new_obj = dict(obj)
+            for k, v in obj.items():
+                if k.endswith("_confidence") and isinstance(v, (int, float)):
+                    new_obj[k] = _clamp(float(v))
+            if isinstance(tc, list):
+                new_obj["tags_confidence"] = [
+                    _clamp(float(v)) if isinstance(v, (int, float)) else v for v in tc
+                ]
+            return new_obj
+        return obj
+
+    try:
+        if isinstance(data, dict):
+            return _process_obj(data)
+        if isinstance(data, list):
+            return [(_process_obj(x) if isinstance(x, dict) else x) for x in data]
+    except Exception:
+        pass
+    return data
     # Try to extract JSON object
     try:
         # If it's valid JSON already, return as-is
@@ -101,7 +151,15 @@ def analyze_text(
             json_mode=True,
             temperature=text_temperature,
         )
-        return _json_guard(answer), usage
+        # Normalize confidences to 0..10 if the model returned 0..1
+        text = _json_guard(answer)
+        try:
+            obj = json.loads(text)
+            obj = _normalize_confidence_numbers(obj)
+            text = json.dumps(obj, ensure_ascii=False)
+        except Exception:
+            pass
+        return text, usage
     except Exception as e:
         logging.error(f"Text analysis failed: {e}")
         return None, {"cost": 0.0}
@@ -368,7 +426,7 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
         "You are a helpful assistant analyzing images inside of documents."
         " For each image, produce an object with these fields:"
         " title (3-4 words), summary (3-4 sentences), creator/issuer, creation_date (if any),"
-        " tags (list), importance (0-10), per-field confidences, and alt_text."
+        " tags (list), importance (0-10), per-field confidences (0-10), and alt_text."
         " The alt_text must explicitly include the image Title and Summary in one or two sentences,"
         " suitable for an HTML alt attribute, and must not include tags or confidence values."
         " It should reflect both the visual content and the page-local text context. "
@@ -388,6 +446,13 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
             temperature = 0.8
         answer, usage = run_vision(model, prompt, images_b64, temperature=temperature)
         text = _json_guard(answer)
+        # Normalize confidences in per-image objects if the model used 0..1
+        try:
+            obj = json.loads(text)
+            obj = _normalize_confidence_numbers(obj)
+            text = json.dumps(obj, ensure_ascii=False)
+        except Exception:
+            pass
         # Try to extract per-image alt texts and inject into the document's text buffer
         try:
             data = json.loads(text)
@@ -844,7 +909,15 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         except Exception:
             temperature = 1.0
         answer, usage = run_vision(model, prompt="", images_b64=[], temperature=temperature, parts=parts)
-        return _json_guard(answer), usage
+        text = _json_guard(answer)
+        # Normalize confidences to 0..10 if needed
+        try:
+            obj = json.loads(text)
+            obj = _normalize_confidence_numbers(obj)
+            text = json.dumps(obj, ensure_ascii=False)
+        except Exception:
+            pass
+        return text, usage
     except Exception as e:
         logging.warning(f"Combined analysis failed: {e}")
         return None, {"cost": 0.0}
