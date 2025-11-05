@@ -19,6 +19,7 @@ import fitz
 import logging
 import re
 import base64
+import hashlib
 import unicodedata
 from datetime import datetime
 import pytz
@@ -26,6 +27,7 @@ import traceback
 from typing import Optional
 
 from autoPDFtagger.ocr import TesseractRunner
+from autoPDFtagger import cache
 
 
 date_formats = {
@@ -294,11 +296,31 @@ class PDFDocument:
             if runner:
                 logging.info("Running OCR for %s (%d pages).", self.file_name, page_count)
                 ocr_segments = []
+                cache_hits = 0
                 for index in range(page_count):
                     page = pdf_document[index]
+                    # Try cache first to avoid unnecessary OCR work
+                    try:
+                        pix = page.get_pixmap(dpi=runner.dpi)
+                        image_bytes = pix.tobytes("png")
+                        img_hash = hashlib.sha256(image_bytes).hexdigest()
+                        key = f"v1|langs={runner.languages}|dpi={runner.dpi}|img={img_hash}"
+                        cached = cache.get("ocr", key)
+                        if cached and isinstance(cached, dict) and (cached.get("text") or "").strip():
+                            cache_hits += 1
+                            ocr_segments.append(cached.get("text") or "")
+                            continue
+                    except Exception:
+                        pass
+                    # Fall back to running OCR (runner will cache result)
                     ocr_text = runner.extract_text_from_page(page)
                     if ocr_text:
                         ocr_segments.append(ocr_text)
+                try:
+                    if cache_hits:
+                        logging.info("OCR cache reused for %s: %d/%d pages", self.file_name, cache_hits, page_count)
+                except Exception:
+                    pass
                 combined = " ".join(ocr_segments)
                 if combined.strip():
                     return self._clean_text(combined)
