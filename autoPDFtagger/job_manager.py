@@ -46,6 +46,10 @@ class JobManager:
         self._last_log_time = 0.0
         # Track which kind status bars have been finalized and logged
         self._finalized_kinds: Set[str] = set()
+        # Fast tick for UI smoothness; real log rate still throttled
+        self._tick_interval = min(0.2, self.status_interval_sec)
+        # Event to wake the status loop immediately on job state changes
+        self._wakeup = threading.Event()
 
     def add_job(self, job: Job) -> None:
         with self._lock:
@@ -137,9 +141,22 @@ class JobManager:
                 # Log finalized lines; upgrade to WARNING when failures occurred
                 for key, label, metrics in finished_kinds:
                     line = render_done_line(label, metrics)
+                    if board_state.enabled:
+                        # Print the final line without timestamp, in-place above the live board
+                        if board_state.suspend():
+                            try:
+                                board_state.stream.write(line + "\n")
+                                board_state.stream.flush()
+                            finally:
+                                board_state.resume()
+                    else:
+                        # Fallback to standard logging when board is not active
+                        if metrics.get("f", 0) > 0:
+                            logging.warning(line)
+                        else:
+                            logging.info(line)
+                    # Additionally, if there were failures, list failed files via logging (kept with timestamps)
                     if metrics.get("f", 0) > 0:
-                        logging.warning(line)
-                        # Collect failed file names for this kind and log them
                         failed_files: List[str] = []
                         with self._lock:
                             for j in self.jobs.values():
@@ -150,9 +167,12 @@ class JobManager:
                                         path = j.id
                                     failed_files.append(os.path.basename(path) or path)
                         if failed_files:
-                            logging.warning("Failed %s files (%d): %s", label, len(failed_files), ", ".join(sorted(failed_files)))
-                    else:
-                        logging.info(line)
+                            logging.warning(
+                                "Failed %s files (%d): %s",
+                                label,
+                                len(failed_files),
+                                ", ".join(sorted(failed_files)),
+                            )
 
                 status_lines = []
                 for idx, (short_label, full_label, metrics) in enumerate(active):
@@ -177,13 +197,18 @@ class JobManager:
                 # Keep status thread robust
                 pass
             finally:
-                self._stop_event.wait(self.status_interval_sec)
+                # Wait for either a tick or an explicit wakeup (job state change)
+                self._wakeup.wait(self._tick_interval)
+                # reset the wakeup flag so future job transitions can wake immediately
+                self._wakeup.clear()
 
     def _mark(self, job_id: str, status: str, error: Optional[str] = None) -> None:
         with self._lock:
             j = self.jobs[job_id]
             j.status = status
             j.error = error
+        # Wake the status loop so final lines render immediately
+        self._wakeup.set()
 
     def _submit_with_status(self, executor: ThreadPoolExecutor, job: Job, wait_for: List[Future]) -> Future:
         def runner():
