@@ -931,6 +931,18 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
                     break
             if best is None:
                 best = ordered[0]
+            # Informative log: why downscaling is used
+            try:
+                original_tokens = int(_estimate_tokens_for_candidate(best))
+            except Exception:
+                original_tokens = -1
+            try:
+                logging.info(
+                    "[combined budget] no images selected; applying adaptive fallback (remaining≈%d). Best candidate: kind=%s p=%d original≈%s tokens",
+                    remaining, str(best.get("kind")), int(best.get("page") or 0), ("%d" % original_tokens if original_tokens >= 0 else "unknown")
+                )
+            except Exception:
+                pass
             # Compute minimal max_px so that tiles fit into 'afford'
             try:
                 import math
@@ -948,11 +960,13 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
                     px = int(min(page_render_max_px, longest_target))
                     render_px_override[("page", pno)] = px
                     selected_pages_full.add(pno)
-                    image_tokens_spent += int(85 + 170 * (per_side * per_side))
-                    remaining = max(0, remaining - int(85 + 170 * (per_side * per_side)))
+                    chosen_tiles = int(per_side * per_side)
+                    chosen_tokens = int(85 + 170 * chosen_tiles)
+                    image_tokens_spent += chosen_tokens
+                    remaining = max(0, remaining - chosen_tokens)
                     logging.info(
-                        "[combined budget] adaptive include page p=%d at ~%dpx (tiles≈%d)",
-                        pno, px, per_side * per_side,
+                        "[combined budget] adaptive include: page p=%d — downscaled to ~%dpx (tiles≈%d, ≈%d tokens)",
+                        pno, px, chosen_tiles, chosen_tokens,
                     )
                 else:
                     # region candidate
@@ -967,14 +981,21 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
                     img_id = int(best.get("id") or 0)
                     render_px_override[("id", img_id)] = px
                     selected_images.add(img_id)
-                    image_tokens_spent += int(85 + 170 * (per_side * per_side))
-                    remaining = max(0, remaining - int(85 + 170 * (per_side * per_side)))
+                    chosen_tiles = int(per_side * per_side)
+                    chosen_tokens = int(85 + 170 * chosen_tiles)
+                    image_tokens_spent += chosen_tokens
+                    remaining = max(0, remaining - chosen_tokens)
                     logging.info(
-                        "[combined budget] adaptive include region id=%d p=%d at ~%dpx (tiles≈%d)",
-                        img_id, pno, px, per_side * per_side,
+                        "[combined budget] adaptive include: region id=%d p=%d — downscaled to ~%dpx (tiles≈%d, ≈%d tokens)",
+                        img_id, pno, px, chosen_tiles, chosen_tokens,
                     )
             except Exception as _e:
                 logging.debug("[combined budget] adaptive include failed: %s", _e)
+        else:
+            logging.info(
+                "[combined budget] no images selected and adaptive fallback not possible (remaining≈%d < ~255 tokens for 1 tile)",
+                remaining,
+            )
 
     # Build final parts in page order: intro, then for each page -> text then images
     parts.append({"type": "text", "text": intro})
