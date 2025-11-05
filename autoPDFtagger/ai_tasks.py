@@ -21,7 +21,7 @@ def _json_guard(text: str) -> str:
         return "{}"
 
 
-def _normalize_confidence_numbers(data: Any) -> Any:
+def _normalize_confidence_numbers(data: Any, source: Optional[str] = None) -> Any:
     """Normalize confidence scales to 0..10 when models return 0..1.
 
     - If an object has only confidence values <= 1.0, scale all its *_confidence fields
@@ -35,7 +35,7 @@ def _normalize_confidence_numbers(data: Any) -> Any:
         except Exception:
             return 0
 
-    def _process_obj(obj: Dict[str, Any]) -> Dict[str, Any]:
+    def _process_obj(obj: Dict[str, Any]) -> Tuple[Dict[str, Any], bool]:
         # Collect all confidence-like values
         vals: list[float] = []
         for k, v in obj.items():
@@ -47,7 +47,7 @@ def _normalize_confidence_numbers(data: Any) -> Any:
                 if isinstance(v, (int, float)):
                     vals.append(float(v))
         if not vals:
-            return obj
+            return obj, False
         if max(vals) <= 1.0:
             # Scale all *_confidence and tags_confidence
             new_obj = dict(obj)
@@ -58,14 +58,28 @@ def _normalize_confidence_numbers(data: Any) -> Any:
                 new_obj["tags_confidence"] = [
                     _clamp(float(v)) if isinstance(v, (int, float)) else v for v in tc
                 ]
-            return new_obj
-        return obj
+            return new_obj, True
+        return obj, False
 
     try:
         if isinstance(data, dict):
-            return _process_obj(data)
+            obj, changed = _process_obj(data)
+            if changed:
+                logging.info("[confidence normalize] source=%s scaled 0..1 → 0..10", source or "unknown")
+            return obj
         if isinstance(data, list):
-            return [(_process_obj(x) if isinstance(x, dict) else x) for x in data]
+            changed_any = False
+            out: List[Any] = []
+            for x in data:
+                if isinstance(x, dict):
+                    nx, changed = _process_obj(x)
+                    changed_any = changed_any or changed
+                    out.append(nx)
+                else:
+                    out.append(x)
+            if changed_any:
+                logging.info("[confidence normalize] source=%s scaled 0..1 → 0..10 (array)", source or "unknown")
+            return out
     except Exception:
         pass
     return data
@@ -155,7 +169,7 @@ def analyze_text(
         text = _json_guard(answer)
         try:
             obj = json.loads(text)
-            obj = _normalize_confidence_numbers(obj)
+            obj = _normalize_confidence_numbers(obj, source="text")
             text = json.dumps(obj, ensure_ascii=False)
         except Exception:
             pass
@@ -449,7 +463,7 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
         # Normalize confidences in per-image objects if the model used 0..1
         try:
             obj = json.loads(text)
-            obj = _normalize_confidence_numbers(obj)
+            obj = _normalize_confidence_numbers(obj, source="image")
             text = json.dumps(obj, ensure_ascii=False)
         except Exception:
             pass
@@ -913,7 +927,7 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         # Normalize confidences to 0..10 if needed
         try:
             obj = json.loads(text)
-            obj = _normalize_confidence_numbers(obj)
+            obj = _normalize_confidence_numbers(obj, source="combined")
             text = json.dumps(obj, ensure_ascii=False)
         except Exception:
             pass
