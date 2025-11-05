@@ -26,6 +26,26 @@ Includes improvements from 0.2:
 
 autoPDFtagger is a CLI for semi‑automatic classification, sorting, and tagging of PDF documents. It enriches PDFs with standard metadata using OCR + AI (text and images) and is explicitly built to handle difficult inputs like low‑quality scans and image‑heavy files (e.g., presentations). Your archive remains plain files and folders (no lock‑in), with optional JSON export for review and integration.
 
+## Inputs & Outputs at a Glance
+
+autoPDFtagger is a file database transformer. It accepts inputs either from stdin or as command‑line arguments, and it produces outputs in the same formats. This symmetry makes it easy to chain runs and keep your archive reproducible.
+
+- Inputs
+  - PDFs or folders of PDFs: the tool scans files and interprets their existing metadata and content (with OCR when needed).
+  - JSON or CSV database: an existing description of your PDF collection (as exported by this tool). You can mix PDFs and database files in one invocation.
+- Outputs
+  - JSON or CSV database: a structured view of your archive with enriched metadata (title, summary, creator, creation date, tags, confidences).
+  - Files: optional export to a target directory (e.g., renamed by detected title/creator).
+- Behavior selection
+  - CLI options control which analyses and actions run (e.g., `-t` for text, `-i` for image, `-c` for tags, `-e` for export). Image analysis already includes page text; `-ti` is redundant.
+
+### Confidence protects good metadata
+
+To avoid overwriting high‑quality metadata with worse guesses, the tool uses per‑field confidences (0–10). Updates apply only when the new confidence is not lower than the existing one.
+
+- If you want to lock a field permanently, set its confidence to 10. The tool will not overwrite it.
+- The overall confidence index (shown in summaries) reflects multiple fields, with extra weight on title and date, and can be used to filter items before exporting.
+
 ## Key Features
 
 - OCR (via Tesseract) + AI text analysis
