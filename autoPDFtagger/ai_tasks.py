@@ -7,6 +7,13 @@ from autoPDFtagger.PDFDocument import PDFDocument
 from autoPDFtagger.llm_client import run_chat, run_vision
 from autoPDFtagger.config import config
 from autoPDFtagger import mock_provider
+from autoPDFtagger.ai_common import (
+    tokenize_text as _tok_est,
+    apply_text_budget as _apply_budget,
+    log_llm_request as _log_req,
+    json_guard as _json_guard2,
+    normalize_confidence_numbers as _normalize2,
+)
 
 
 def _lang() -> str:
@@ -167,44 +174,14 @@ def analyze_text(
     except Exception:
         token_limit = 1_000_000
 
-    # Rough token estimator (tiktoken if available, else len/4)
+    budget = _apply_budget("text", doc.file_name, system, user, token_limit)
+    if budget.get("abort"):
+        return None, {"cost": 0.0, "dry_run": True, "skipped_reason": budget.get("reason")}
+    user = budget.get("user_text", user)
+    messages[1]["content"] = user
     try:
-        import tiktoken  # type: ignore
-        enc = tiktoken.get_encoding("cl100k_base")
-        def _tok_len(s: str) -> int:
-            try:
-                return len(enc.encode(s or ""))
-            except Exception:
-                return max(1, len(s or "") // 4)
-    except Exception:
-        def _tok_len(s: str) -> int:
-            return max(1, len(s or "") // 4)
-
-    intro_tokens = _tok_len(system)
-    user_tokens = _tok_len(user)
-    total_tokens_est = intro_tokens + user_tokens
-    if intro_tokens > token_limit:
-        logging.info(
-            "[text budget] %s: intro exceeds limit (intro≈%d > limit=%d); aborting request",
-            doc.file_name, intro_tokens, token_limit,
-        )
-        return None, {"cost": 0.0, "dry_run": True, "skipped_reason": "intro_exceeds_limit"}
-    if total_tokens_est > token_limit:
-        # Trim user content proportionally; keep system intact
-        budget = max(0, token_limit - intro_tokens)
-        if user_tokens > 0 and budget < user_tokens:
-            ratio = budget / max(1, user_tokens)
-            cut = int(len(user) * ratio)
-            user = user[: max(1, cut)]
-            messages[1]["content"] = user
-        logging.info(
-            "[text budget] %s: trimmed text to fit limit (used_tokens≈%d/%d)",
-            doc.file_name, intro_tokens + _tok_len(user), token_limit,
-        )
-    # Pre-call debug summary
-    try:
-        used = intro_tokens + _tok_len(user)
-        logging.debug("[text request] tokens: total≈%d/%d", used, token_limit)
+        used = int(budget.get("used_tokens") or (_tok_est(system) + _tok_est(user)))
+        _log_req("text", doc.file_name, parts=0, text_tokens=used, image_tokens=None, total_tokens=used, token_limit=token_limit)
     except Exception:
         pass
 
@@ -221,10 +198,10 @@ def analyze_text(
             temperature=text_temperature,
         )
         # Normalize confidences to 0..10 if the model returned 0..1
-        text = _json_guard(answer)
+        text = _json_guard2(answer)
         try:
             obj = json.loads(text)
-            obj = _normalize_confidence_numbers(obj, source="text")
+            obj = _normalize2(obj, source="text")
             text = json.dumps(obj, ensure_ascii=False)
         except Exception:
             pass
@@ -514,11 +491,11 @@ def analyze_images(doc: PDFDocument, model: str = "") -> Tuple[Optional[str], Di
         except Exception:
             temperature = 0.8
         answer, usage = run_vision(model, prompt, images_b64, temperature=temperature)
-        text = _json_guard(answer)
+        text = _json_guard2(answer)
         # Normalize confidences in per-image objects if the model used 0..1
         try:
             obj = json.loads(text)
-            obj = _normalize_confidence_numbers(obj, source="image")
+            obj = _normalize2(obj, source="image")
             text = json.dumps(obj, ensure_ascii=False)
         except Exception:
             pass
@@ -813,17 +790,8 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
             page_text_map[p] = (prev + ("\n\n" if prev else "") + txt)
 
     # Estimate token usage for intro + page texts; trim proportionally if exceeding token_limit
-    try:
-        import tiktoken  # type: ignore
-        enc = tiktoken.get_encoding("cl100k_base")
-        def _tok_len(s: str) -> int:
-            try:
-                return len(enc.encode(s or ""))
-            except Exception:
-                return max(1, len(s or "") // 4)
-    except Exception:
-        def _tok_len(s: str) -> int:
-            return max(1, len(s or "") // 4)
+    def _tok_len(s: str) -> int:
+        return _tok_est(s)
 
     text_parts: List[Tuple[int, str]] = []  # (page, text)
     for p in sorted(page_text_map.keys()):
@@ -1113,11 +1081,11 @@ def analyze_combined(doc: PDFDocument, model: str = "", visual_debug_path: Optio
         except Exception:
             temperature = 1.0
         answer, usage = run_vision(model, prompt="", images_b64=[], temperature=temperature, parts=parts)
-        text = _json_guard(answer)
+        text = _json_guard2(answer)
         # Normalize confidences to 0..10 if needed
         try:
             obj = json.loads(text)
-            obj = _normalize_confidence_numbers(obj, source="image")
+            obj = _normalize2(obj, source="image")
             text = json.dumps(obj, ensure_ascii=False)
         except Exception:
             pass
@@ -1288,7 +1256,7 @@ def analyze_tags(tags: List[str], model: str = "") -> Tuple[List[Dict[str, str]]
     ]
     try:
         answer, usage = run_chat(model, messages, json_mode=True)
-        text = _json_guard(answer)
+        text = _json_guard2(answer)
         try:
             data = json.loads(text)
             if isinstance(data, list):
