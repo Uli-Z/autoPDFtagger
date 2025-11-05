@@ -51,8 +51,9 @@ class PDFList:
             self.import_from_json_file(file_path)
         elif file_path.endswith(".csv"):
             self.import_from_csv_file(file_path)
-        else: 
-            logging.error(f"Invalid file type (skipped): {file_path}")
+        else:
+            # Non-PDF/CSV/JSON files are expected in mixed folders; keep this quiet
+            logging.debug(f"Invalid file type (skipped): {file_path}")
 
     # Scan a folder for files
     def add_pdf_documents_from_folder(self, folder_or_file, base_dir):
